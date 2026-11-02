@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         学习通AI学习助手
-// @namespace    https://github.com/March-OwO
-// @version      1.2.9
-// @author       March
-// @description  学习通AI助手，使用AI大语言模型(默认DeepSeek)答题，任务点自动跳转，视频文档全自动。
+// @namespace    https://github.com/Phiedeir/Xuexitong-LLM-Assistant
+// @version      1.2.11
+// @author       Phiedeir（基于 March-OwO 的 1.2.9 维护）
+// @description  学习通AI助手，使用AI大语言模型答题，任务点自动跳转，视频文档全自动。1.2.11：关闭思维链（6 种参数变体自动探测）+ 结构化输出「答案：B. 选项原文」+ 页面内诊断面板（免 F12）+ 视频倍速可调可关。
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/*
 // @match        *://*.nbdlib.cn/*
@@ -20,34 +20,7 @@
 // @resource     element-plus  https://cdn.staticfile.org/element-plus/2.3.12/index.css
 // @resource     ttf           https://www.forestpolice.org/ttf/2.0/table.json
 // @connect      api.deepseek.com
-// @connect      api.siliconflow.cn
-// @connect      openrouter.ai
-// @connect      aihubmix.com
-// @connect      api.xiaomimimo.com
-// @connect      open.bigmodel.cn
-// @connect      api.moonshot.cn
-// @connect      dashscope.aliyuncs.com
-// @connect      api.hunyuan.cloud.tencent.com
-// @connect      spark-api-open.xf-yun.com
-// @connect      ark.cn-beijing.volces.com
-// @connect      qianfan.baidubce.com
-// @connect      api.minimaxi.com
-// @connect      api.stepfun.com
-// @connect      api.baichuan-ai.com
-// @connect      api.lingyiwanwu.com
-// @connect      api.longcat.chat
-// @connect      api.openai.com
-// @connect      api.x.ai
-// @connect      generativelanguage.googleapis.com
-// @connect      localhost
-// @connect      127.0.0.1
 // @connect      *
-//                ↑ 通配：允许调用上面未列出的任意域名（如自建/中转站 API）。
-//                  为什么需要它：@connect 属于「安装期元数据」，脚本在运行时无权修改；
-//                  所以「在配置页填个域名就自动加白名单」在技术上做不到。
-//                  加了 * 之后：配置页「API地址」填任何域名都能用；首次访问新域名时
-//                  篡改猴会弹确认框，点「始终允许所有域」即永久放行（或到 篡改猴→本脚本→
-//                  设置→用户域白名单 手动填 * 或该域名）。
 // @grant        GM_addStyle
 // @grant        GM_getResourceText
 // @grant        GM_getValue
@@ -62,6 +35,47 @@
 (async function (vue, pinia$1, ElementPlus, md5, $$1) {
   'use strict';
 
+  // ══════════════════════════════════════════════════════════════════════
+  // 1.2.10：平台把 F12 禁掉了（keydown 拦截 + devtools 检测后 debugger 死循环，
+  //   一开控制台整个页面就停住）。这里做三件事：
+  //   ① 在 window 捕获阶段抢在页面的 keydown 监听之前放行开发者工具快捷键
+  //   ② 包一层 Function 构造，把「注入型 debugger」抹掉（源码内写死的断点管不到）
+  //   ③ 页面内诊断面板：日志和自检结果直接渲染成页面元素，全程不需要 F12
+  // ══════════════════════════════════════════════════════════════════════
+  (function unlockDevtools() {
+    try {
+      const W = _unsafeWindow;
+      const isDevKey = (e) => {
+        const k = String(e.key || "");
+        if (k === "F12" || e.keyCode === 123) return true;
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && /^[IJCijc]$/.test(k)) return true;
+        if ((e.ctrlKey || e.metaKey) && /^[uU]$/.test(k)) return true;
+        return false;
+      };
+      const swallow = (e) => { try { if (isDevKey(e)) e.stopImmediatePropagation(); } catch (err) {} };
+      ["keydown", "keyup", "keypress"].forEach((t) => {
+        try { W.addEventListener(t, swallow, true); } catch (e) {}
+        try { document.addEventListener(t, swallow, true); } catch (e) {}
+      });
+      try {
+        const OrigFunction = W.Function;
+        const sanitize = (code) => String(code).replace(/\bdebugger\b\s*;?/g, "void 0;");
+        const Patched = function () {
+          const args = Array.prototype.slice.call(arguments);
+          if (args.length) args[args.length - 1] = sanitize(args[args.length - 1]);
+          return OrigFunction.apply(this, args);
+        };
+        Patched.prototype = OrigFunction.prototype;
+        try { Object.defineProperty(Patched, "name", { value: "Function", configurable: true }); } catch (e) {}
+        try { W.Function = Patched; } catch (e) {}
+        try { Object.defineProperty(OrigFunction.prototype, "constructor", { value: Patched, writable: true, configurable: true }); } catch (e) {}
+      } catch (e) {}
+      try { W.document.oncontextmenu = null; W.document.onselectstart = null; W.document.oncopy = null; } catch (e) {}
+    } catch (e) {}
+  })();
+
+  const CX_BUILD = "1.2.11-20261102a";
+
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => {
@@ -73,12 +87,98 @@
     GM_addStyle(t);
   })("element-plus");
   var _GM_getResourceText = (() => "undefined" != typeof GM_getResourceText ? GM_getResourceText : void 0)(), _GM_getValue = (() => "undefined" != typeof GM_getValue ? GM_getValue : void 0)(), _GM_info = (() => "undefined" != typeof GM_info ? GM_info : void 0)(), _GM_setValue = (() => "undefined" != typeof GM_setValue ? GM_setValue : void 0)(), _GM_xmlhttpRequest = (() => "undefined" != typeof GM_xmlhttpRequest ? GM_xmlhttpRequest : void 0)(), _unsafeWindow = (() => "undefined" != typeof unsafeWindow ? unsafeWindow : void 0)();
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 配置层（1.2.10 修复：键合并）
+  //   旧实现 `_GM_getValue("config") || defaultConfig$1` 不做合并——
+  //   只要存过一份早期版本配置，后来新增的键就永远是 undefined，
+  //   aiModel 缺键 → 掉回默认值 → 必然 400。这里逐键合并默认值。
+  // ══════════════════════════════════════════════════════════════════════
+  const defaultConfig$1 = {
+    debugger: false,
+    autoAnswer: true,
+    autoVideo: true,
+    autoJump: true,
+    autoSubmit: true,
+    thtoken: "",
+    aiApiUrl: "",
+    aiModel: "",
+    interval: 5,
+    answerInterval: 5,
+    autoExam: true,
+    videoRate: 16,
+    videoRateOn: true,
+    videoMute: true,
+    keepLog: 300
+  };
+
   const getConfig = () => {
-    const config = _GM_getValue("config");
-    return config || defaultConfig$1;
-  }, defaultConfig$1 = { debugger: false, autoAnswer: true, autoVideo: true, autoJump: true, autoSubmit: true, thtoken: "", aiApiUrl: "", aiModel: "", interval: 5, answerInterval: 5, autoExam: true }, userConfig = [{ name: "base", label: "接口配置", config: [ { name: "thtoken", label: "API Key", type: "input", value: defaultConfig$1.thtoken, desc: "保存在本地，不会泄露" }, { name: "aiApiUrl", label: "API地址", type: "input", value: defaultConfig$1.aiApiUrl, desc: "留空默认 DeepSeek；支持任意厂商/自建/中转站域名——本脚本已声明 @connect *，首次请求新域名时请在篡改猴弹框点『始终允许所有域』即可永久放行" }, { name: "aiModel", label: "模型名称", type: "input", value: defaultConfig$1.aiModel, desc: "留空默认 deepseek-v4-flash" }] }, { name: "chapter", label: "章节配置", config: [{ name: "autoAnswer", label: "自动答题", type: "switch", value: defaultConfig$1.autoAnswer, desc: "开启后，会自动答题" }, { name: "autoVideo", label: "自动视频", type: "switch", value: defaultConfig$1.autoVideo, desc: "开启后，会自动观看视频" }, { name: "autoJump", label: "自动切换", type: "switch", value: defaultConfig$1.autoVideo, desc: "开启后，会自动切换章节" }, { name: "autoSubmit", label: "自动提交", type: "switch", value: defaultConfig$1.autoSubmit, desc: "开启后，会自动提交答案" }] }, { name: "exam", label: "考试配置", config: [{ name: "autoExam", label: "考试自动切换", type: "switch", value: defaultConfig$1.autoExam, desc: "开启后，考试会自动切换" }] }], useformStore = pinia$1.defineStore({ id: "formstore", state: () => ({ forminput: getConfig(), dialogV: false, activeName: "base" }), actions: { saveConfig(forminput) {
-    _GM_setValue("config", forminput);
-  } } });
+    const saved = _GM_getValue("config");
+    const cfg = {};
+    for (const k in defaultConfig$1) cfg[k] = defaultConfig$1[k];
+    if (saved && typeof saved === "object") {
+      for (const k in saved) {
+        if (!Object.prototype.hasOwnProperty.call(saved, k)) continue;
+        const v = saved[k];
+        // 空串视为「没填」→ 保留默认；false / 0 / 数组照常覆盖
+        if (v !== undefined && v !== null && v !== "") cfg[k] = v;
+      }
+    }
+    return cfg;
+  };
+
+  // 端点规范化：把「只填域名」「只填到 /v1」都收敛成完整 chat/completions
+  const normalizeApiUrl = (u) => {
+    let s = String(u || "").trim().replace(/\s+/g, "").replace(/\/+$/, "");
+    if (!s) return "https://api.deepseek.com/v1/chat/completions";
+    if (/\/chat\/completions$/i.test(s)) return s;
+    if (/\/responses$/i.test(s)) return s;
+    if (/\/v1$/i.test(s)) return s + "/chat/completions";
+    if (/^https?:\/\/[^/]+$/i.test(s)) return s + "/v1/chat/completions";
+    return s;
+  };
+
+  const userConfig = [{
+    name: "base",
+    label: "接口配置",
+    config: [
+      { name: "thtoken", label: "API Key", type: "input", value: defaultConfig$1.thtoken, desc: "保存在本地，不会泄露" },
+      { name: "aiApiUrl", label: "API地址", type: "input", value: defaultConfig$1.aiApiUrl, desc: "留空=DeepSeek。只填域名或只到 /v1 会自动补 /v1/chat/completions。支持任意中转站——本脚本已声明 @connect *，首次请求新域名请在篡改猴弹框点『始终允许所有域』" },
+      { name: "aiModel", label: "模型名称", type: "input", value: defaultConfig$1.aiModel, desc: "必须填服务商文档里的准确模型 ID。留空默认 deepseek-chat。gpt-5/6 系、o 系等推理模型会自动改用 max_completion_tokens 并去掉 temperature" }
+    ]
+  }, {
+    name: "chapter",
+    label: "章节配置",
+    config: [
+      { name: "autoAnswer", label: "自动答题", type: "switch", value: defaultConfig$1.autoAnswer, desc: "开启后，会自动答题" },
+      { name: "autoVideo", label: "自动视频", type: "switch", value: defaultConfig$1.autoVideo, desc: "开启后，会自动观看视频" },
+      { name: "autoJump", label: "自动切换", type: "switch", value: defaultConfig$1.autoJump, desc: "开启后，会自动切换章节" },
+      { name: "autoSubmit", label: "自动提交", type: "switch", value: defaultConfig$1.autoSubmit, desc: "开启后，会自动提交答案" },
+      { name: "answerInterval", label: "答题间隔(秒)", type: "number", value: defaultConfig$1.answerInterval, desc: "每道题之间的等待。越小越快：1~2 稳，0.3~0.5 很快，太快可能被判答题异常" },
+      { name: "interval", label: "任务间隔(秒)", type: "number", value: defaultConfig$1.interval, desc: "任务点（视频/测验/文档）之间的等待" },
+      { name: "videoRateOn", label: "视频倍速开关", type: "switch", value: defaultConfig$1.videoRateOn, desc: "关闭后按 1.0 倍原速播放。倍速过高有被判异常的风险" },
+      { name: "videoRate", label: "视频倍速", type: "number", value: defaultConfig$1.videoRate, desc: "1 ~ 16。播放器若把倍速夹到上限（常见 2~4），日志会打印实际生效值" },
+      { name: "videoMute", label: "视频静音", type: "switch", value: defaultConfig$1.videoMute, desc: "静音播放，避免自动播放被浏览器拦截" }
+    ]
+  }, {
+    name: "exam",
+    label: "考试配置",
+    config: [
+      { name: "autoExam", label: "考试自动切换", type: "switch", value: defaultConfig$1.autoExam, desc: "开启后，考试会自动切换" }
+    ]
+  }];
+
+  const useformStore = pinia$1.defineStore({
+    id: "formstore",
+    state: () => ({ forminput: getConfig(), dialogV: false, activeName: "base" }),
+    actions: {
+      saveConfig(forminput) {
+        // GM_setValue 直接吃 Vue reactive proxy 有丢键风险，先做一次纯对象化
+        _GM_setValue("config", JSON.parse(JSON.stringify(forminput)));
+      }
+    }
+  });
+
   var export_helper_default = (sfc, props) => {
     let target = sfc.__vccOpts || sfc;
     for (let [key, val] of props)
@@ -92,15 +192,15 @@
     return vue.openBlock(), vue.createElementBlock("svg", _hoisted_1231, _hoisted_3230);
   }], ["__file", "setting.vue"]]);
   const _sfc_main$1 = vue.defineComponent({ components: {}, setup() {
-    const formstoreObj = useformStore(), { forminput, dialogV, activeName } = pinia$1.storeToRefs(formstoreObj), ruleFormRef = vue.ref(), rules = vue.reactive({ interval: [{ required: true, message: "间隔时间不能为空" }, { type: "number", message: "间隔时间必须为数字" }, { validator: (rule, value) => value >= 1 ? Promise.resolve() : Promise.reject("间隔时间必须大于等于1") }], answerInterval: [{ required: true, message: "答题间隔不能为空" }, { type: "number", message: "答题间隔必须为数字" }, { validator: (rule, value) => value >= 1 ? Promise.resolve() : Promise.reject("答题间隔必须大于等于1") }], token: [{ validator: (rule, value) => {
-      if (value) {
-        return /^[a-zA-Z0-9]{6,}$/.test(value) ? Promise.resolve() : Promise.reject("token格式错误");
-      }
-      return Promise.resolve();
-    } }] });
+    const formstoreObj = useformStore(), { forminput, dialogV, activeName } = pinia$1.storeToRefs(formstoreObj),
+      ruleFormRef = vue.ref(), rules = vue.reactive({
+        interval: [{ required: true, message: "间隔时间不能为空" }, { type: "number", message: "间隔时间必须为数字" }, { validator: (rule, value) => value >= 0.1 ? Promise.resolve() : Promise.reject("间隔时间必须大于等于0.1") }],
+        answerInterval: [{ required: true, message: "答题间隔不能为空" }, { type: "number", message: "答题间隔必须为数字" }, { validator: (rule, value) => value >= 0.1 ? Promise.resolve() : Promise.reject("答题间隔必须大于等于0.1") }],
+        thtoken: [{ validator: (rule, value) => { if (value && /[\s\u4e00-\u9fa5]/.test(value)) return Promise.reject("API Key 里含空格/换行/中文，请重新粘贴"); return Promise.resolve(); } }]
+      });
     return { dialogV, activeName, ruleFormRef, forminput, rules, submitForm: async (formEl) => {
       formEl && await formEl.validate((valid, fields) => {
-        valid && (formstoreObj.saveConfig(forminput.value), ElementPlus.ElNotification({ title: "Success", message: "配置保存成功,请自行刷新页面", type: "success" }), dialogV.value = false);
+        valid && (formstoreObj.saveConfig(forminput.value), ElementPlus.ElNotification({ title: "Success", message: "配置保存成功，请刷新页面（F12 输入 __cxDiag() 可自检）", type: "success", duration: 5000 }), dialogV.value = false);
       });
     }, userConfig, Setting: setting_default };
   } }), _export_sfc = (sfc, props) => {
@@ -113,178 +213,782 @@
     const _component_el_button = vue.resolveComponent("el-button"), _component_el_switch = vue.resolveComponent("el-switch"), _component_el_input = vue.resolveComponent("el-input"), _component_el_input_number = vue.resolveComponent("el-input-number"), _component_el_option = vue.resolveComponent("el-option"), _component_el_select = vue.resolveComponent("el-select"), _component_el_checkbox = vue.resolveComponent("el-checkbox"), _component_el_checkbox_group = vue.resolveComponent("el-checkbox-group"), _component_el_tooltip = vue.resolveComponent("el-tooltip"), _component_el_form_item = vue.resolveComponent("el-form-item"), _component_el_tab_pane = vue.resolveComponent("el-tab-pane"), _component_el_tabs = vue.resolveComponent("el-tabs"), _component_el_form = vue.resolveComponent("el-form"), _component_el_dialog = vue.resolveComponent("el-dialog");
     return vue.openBlock(), vue.createElementBlock(vue.Fragment, null, [vue.createVNode(_component_el_button, { type: "danger", id: "csbutton", icon: _ctx.Setting, circle: "", onClick: _cache[0] || (_cache[0] = ($event) => { const s = _unsafeWindow._askStore; if (s) s.dialogVisible = !s.dialogVisible; else _ctx.dialogV = !_ctx.dialogV; }) }, null, 8, ["icon"]), vue.createVNode(_component_el_dialog, { modelValue: _ctx.dialogV, "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => _ctx.dialogV = $event), title: "学习通AI学习助手", width: "30%", modal: false, center: "", draggable: "" }, { footer: vue.withCtx(() => [vue.createElementVNode("span", _hoisted_1$1, [vue.createVNode(_component_el_button, { onClick: _cache[2] || (_cache[2] = ($event) => _ctx.dialogV = false) }, { default: vue.withCtx(() => [vue.createTextVNode("取消")]), _: 1 }), vue.createVNode(_component_el_button, { type: "primary", onClick: _cache[3] || (_cache[3] = ($event) => _ctx.submitForm(_ctx.ruleFormRef)) }, { default: vue.withCtx(() => [vue.createTextVNode("保存")]), _: 1 })])]), default: vue.withCtx(() => [vue.createVNode(_component_el_form, { ref: "ruleFormRef", rules: _ctx.rules, model: _ctx.forminput, class: "demo-ruleForm" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tabs, { class: "demo-tabs", modelValue: _ctx.activeName, "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => _ctx.activeName = $event) }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.userConfig, (item) => (vue.openBlock(), vue.createBlock(_component_el_tab_pane, { key: item.name, label: item.label, name: item.name }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item.config, (item1) => (vue.openBlock(), vue.createBlock(_component_el_form_item, { label: item1.label, prop: item1.name }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tooltip, { class: "box-item", effect: "dark", content: item1.desc || "", placement: "top" }, { default: vue.withCtx(() => ["switch" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_switch, { key: 0, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "input" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_input, { key: 1, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "number" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_input_number, { key: 2, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "select" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_select, { key: 3, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event, placeholder: "请选择" }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item1.options, (item2) => (vue.openBlock(), vue.createBlock(_component_el_option, { key: item2.value, label: item2.label, value: item2.value }, null, 8, ["label", "value"]))), 128))]), _: 2 }, 1032, ["modelValue", "onUpdate:modelValue"])) : "checkbox" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_checkbox_group, { key: 4, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item1.options, (item2) => (vue.openBlock(), vue.createBlock(_component_el_checkbox, { key: item2.value, label: item2.value, name: item2.value }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(item2.label), 1)]), _: 2 }, 1032, ["label", "name"]))), 128))]), _: 2 }, 1032, ["modelValue", "onUpdate:modelValue"])) : vue.createCommentVNode("", true)]), _: 2 }, 1032, ["content"])]), _: 2 }, 1032, ["label", "prop"]))), 256))]), _: 2 }, 1032, ["label", "name"]))), 128))]), _: 1 }, 8, ["modelValue"])]), _: 1 }, 8, ["rules", "model"])]), _: 1 }, 8, ["modelValue"])], 64);
   }], ["__scopeId", "data-v-6ed29f7f"]]);
+
   let defaultConfig = getConfig();
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 1.2.10 核心：推理模型适配
+  //   问题：gpt-5 / gpt-6 / o 系等推理模型（1）不再接受 max_tokens，
+  //         必须用 max_completion_tokens；（2）只接受 temperature=1，
+  //         传 0.1 直接 400。旧脚本两条硬编码同时踩中 → 每题都 400
+  //         → 被静默吞成空答案 → 面板只剩「暂无答案」。
+  //   方案：按模型家族排好参数阶梯，400 判定为「参数不认」就自动降一级重试；
+  //         判定为「模型不存在 / 鉴权失败」则立刻停止并如实报错。
+  // ══════════════════════════════════════════════════════════════════════
+  const isReasoningModel = (m) => {
+    const s = String(m || "").trim().toLowerCase();
+    if (!s) return false;
+    if (/^o[1-9](\b|[-_.])/.test(s)) return true;              // o1 o3 o4-mini …
+    if (/^gpt-([5-9]|\d{2})/.test(s)) return true;             // gpt-5 gpt-5.6 gpt-6 …
+    if (/(^|[-_./])(sol|reasoner|reasoning|thinking|r1|think)([-_./]|$)/.test(s)) return true;
+    return false;
+  };
+
+  const PARAM_ERR_RE = /(max_tokens|max_completion_tokens|temperature|top_p|reasoning_effort|chat_template_kwargs|enable_thinking|thinking|unsupported[_\s]?(parameter|value|field)|not\s+supported|不支持|invalid[_\s]?(value|parameter)|unknown[_\s]?(parameter|field)|does\s+not\s+support)/i;
+  const MODEL_ERR_RE = /(model[_.\s]?(not[_.\s]?found|not[_.\s]?exist|does\s+not\s+exist|unavailable)|invalid[_.\s]?model|no\s+such\s+model|model.*?(不存在|无效|不可用)|模型.*?(不存在|无效))/i;
+
+  // 1.2.10 省 token：本地答案缓存。
+  //   同一题库在不同章节 / 不同周次反复出现，旧实现每次都发请求。
+  //   以「题型 + 题干 + 全部选项」做键，命中直接返回，零 token、零延迟。
+  const ANS_CACHE_KEY = "anscache2", ANS_CACHE_MAX = 3000;
+  const qKey = (q, type, options) => md5(String(type) + "|" + String(q).replace(/\s+/g, " ") + "|" + (options || []).join("\u0001")).slice(0, 20);
+  const ansCacheLoad = () => { try { const o = _GM_getValue(ANS_CACHE_KEY); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; } catch (e) { return {}; } };
+  const ansCacheGet = (k) => { const o = ansCacheLoad(); const v = o[k]; return v && v.a != null ? v.a : null; };
+  const ansCacheSet = (k, answer) => {
+    try {
+      if (answer == null) return;
+      const empty = typeof answer === "string" ? "" === answer.trim() : (Array.isArray(answer) ? answer.length === 0 : false);
+      if (empty) return;
+      const o = ansCacheLoad();
+      o[k] = { a: answer, t: Date.now() };
+      const ks = Object.keys(o);
+      if (ks.length > ANS_CACHE_MAX) {
+        ks.sort((a, b) => (o[a].t || 0) - (o[b].t || 0)).slice(0, ks.length - ANS_CACHE_MAX).forEach((x) => { delete o[x]; });
+      }
+      _GM_setValue(ANS_CACHE_KEY, o);
+    } catch (e) {}
+  };
+
+  // 1.2.10 省 token：按题型算输出预算。
+  //   旧实现不分题型一律 max_tokens=1000 —— 单选题正确答案只有 1 个字母，
+  //   那一千个 token 的额度纯属摆设（虽按实际用量计费，但推理模型会把额度拿去买思维链）。
+  const tokenBudget = (type) => {
+    const t = parseInt(type);
+    if (t === 0 || t === 3) return 24;      // 单选 / 判断：只要 1 个字母或 2 个字
+    if (t === 1) return 48;                 // 多选：最多 4 个字母
+    if (t === 2) return 240;                // 填空：按空数留余量
+    return 480;                             // 简答/名词解释/论述/计算
+  };
+
+  // 关掉思维链的四条路径，不同后端认不同的那一条。
+  // 顺序按「命中率 × 彻底程度」排：none 是官方硬关闭；chat_template_kwargs 是 vLLM/Qwen 系
+  // （会返回 reasoning_content 字段的后端基本都认这条）；thinking 是 Anthropic 兼容层的写法。
+  const NO_THINK_VARIANTS = [
+    { label: "effort:none",              patch: { reasoning_effort: "none" } },
+    { label: "chat_template_kwargs",     patch: { chat_template_kwargs: { enable_thinking: false } } },
+    { label: "enable_thinking:false",    patch: { enable_thinking: false } },
+    { label: "thinking:disabled",        patch: { thinking: { type: "disabled" } } },
+    { label: "effort:minimal",           patch: { reasoning_effort: "minimal" } },
+    { label: "effort:low",               patch: { reasoning_effort: "low" } }
+  ];
+  // 某个变体被该服务商拒绝过 → 记住，后续题目不再浪费一次往返
+  const BAD_VARIANT = new Set();
+  const variantOk = (label) => !BAD_VARIANT.has(label);
+
+  const buildAttempts = (apiUrl, model, sysPrompt, userPrompt, type) => {
+    const msgs = [{ role: "system", content: sysPrompt }, { role: "user", content: userPrompt }];
+    const reasoning = isReasoningModel(model);
+    const budget = tokenBudget(type);
+    // 推理模型的 max_completion_tokens 包含思维链 token，留 16 倍余量、下限 1200
+    const rBudget = Math.max(budget * 16, 1200);
+    const bodies = [];
+    const push = (b, variant) => {
+      const k = JSON.stringify(b);
+      if (!bodies.some((x) => x.body && JSON.stringify(x.body) === k)) bodies.push({ body: b, variant: variant || "" });
+    };
+    if (reasoning) {
+      // ① 优先「显式关闭思维链」
+      NO_THINK_VARIANTS.forEach((v) => {
+        if (variantOk(v.label)) push(Object.assign({ model, stream: false, messages: msgs, max_completion_tokens: rBudget }, v.patch), v.label);
+      });
+      // ② 退到「不传任何思考参数」
+      push({ model, stream: false, messages: msgs, max_completion_tokens: rBudget });
+      push({ model, stream: false, messages: msgs, temperature: 1, max_completion_tokens: rBudget });
+      push({ model, stream: false, messages: msgs, temperature: 0.1, max_tokens: budget }); // 老中转站兜底
+      // ③ 最后：思维链把额度吃满时，用大预算硬扛
+      push({ model, stream: false, messages: msgs, max_completion_tokens: Math.max(8192, rBudget * 4) });
+    } else {
+      push({ model, stream: false, messages: msgs, temperature: 0.1, max_tokens: budget });
+      push({ model, stream: false, messages: msgs, temperature: 0.1, max_completion_tokens: budget });
+      push({ model, stream: false, messages: msgs, max_completion_tokens: budget });
+    }
+    push({ model, stream: false, messages: msgs });   // 最裸：只留 messages
+
+    const attempts = [];
+    bodies.forEach((x, i) => attempts.push({ url: apiUrl, body: x.body, tag: "chat" + (i + 1), variant: x.variant }));
+
+    // Responses 端点兜底：部分中转站把新模型只挂在 /v1/responses
+    let respUrl = null;
+    if (/\/chat\/completions$/i.test(apiUrl)) respUrl = apiUrl.replace(/\/chat\/completions$/i, "/responses");
+    else if (/\/v1$/i.test(apiUrl)) respUrl = apiUrl + "/responses";
+    if (respUrl && respUrl !== apiUrl) {
+      attempts.push({ url: respUrl, body: { model, input: sysPrompt + "\n\n" + userPrompt }, tag: "responses" });
+    }
+    return attempts;
+  };
+
+  // 从各种响应形态里捞正文。
+  // ⚠️ 1.2.10 关键修复：reasoning_content 是思维链，不是答案。
+  //   旧实现 `if (!s && m.reasoning_content) s = ...` 把思维链当答案返回，
+  //   于是 matchAnswer 拿一段"我们需要回答中文题目…"去和选项精确比对，必然对不上，
+  //   偏偏这条路径没有 error 字段 → 面板只显示「AI 返回空答案，且未记录原因」。
+  const pickContent = (j) => {
+    if (!j || typeof j !== "object") return { text: "", source: "none" };
+    const m = (j.choices && j.choices[0] && j.choices[0].message) || {};
+    const content = String(m.content == null ? "" : m.content).trim();
+    if (content) return { text: content, source: "content" };
+    if (j.output_text && String(j.output_text).trim()) return { text: String(j.output_text).trim(), source: "output_text" };
+    if (Array.isArray(j.output)) {
+      const s = j.output.map((o) => Array.isArray(o.content) ? o.content.map((c) => c && c.text ? c.text : "").join("") : "").join("").trim();
+      if (s) return { text: s, source: "output" };
+    }
+    if (j.choices && j.choices[0] && j.choices[0].text && String(j.choices[0].text).trim()) {
+      return { text: String(j.choices[0].text).trim(), source: "choices.text" };
+    }
+    if (j.data && j.data.content && String(j.data.content).trim()) return { text: String(j.data.content).trim(), source: "data.content" };
+    const r = String(m.reasoning_content || m.reasoning || "").trim();
+    if (r) return { text: "", source: "reasoning-only", reasoning: r };
+    return { text: "", source: "none" };
+  };
+
+  const pickUsage = (j) => {
+    const u = (j && j.usage) || {};
+    const pt = u.prompt_tokens || u.input_tokens || 0;
+    const ct = u.completion_tokens || u.output_tokens || 0;
+    return { pt, ct, tt: u.total_tokens || (pt + ct), estimated: false };
+  };
+
+  // 从一段文本（可能是正文，也可能是思维链）里抽选项字母。
+  // 旧实现 `ans.match(/[A-Da-d]/)[0]` 会踩到英文单词——本题思维链里出现 Archimedes，
+  // 首字母 A 就被当成了答案。这里改成三级：显式标记 → 整段就是字母 → 独立成词的单字母。
+  const extractLetters = (txt, optionCount) => {
+    const t = String(txt || "");
+    const n = Math.max(4, Math.min(optionCount || 4, 8));
+    const pool = "ABCDEFGH".slice(0, n);
+    const set = new Set();
+    // ① 显式标记：答案：A / 应选 A / 正确选项为 A / 选A / 答：B
+    const re1 = /(?:答案|应选|正确选项|选择|选|答)\s*[:：是为]?\s*([A-H](?:\s*[,，、\/]?\s*[A-H]){0,7})/g;
+    let m;
+    while ((m = re1.exec(t))) {
+      for (const c of m[1].replace(/[^A-H]/g, "")) if (pool.includes(c)) set.add(c);
+    }
+    if (set.size) return Array.from(set).sort();
+    // ② 整段就是一个/几个字母（模型严格听话的情况）
+    const bare = t.trim().match(/^[\(\[]?\s*([A-H](?:\s*[,，、\/]?\s*[A-H])*)\s*[\)\]]?[.。]?$/);
+    if (bare) {
+      for (const c of bare[1].replace(/[^A-H]/g, "")) if (pool.includes(c)) set.add(c);
+      if (set.size) return Array.from(set).sort();
+    }
+    // ③ 独立成词的单字母：前后不能紧邻英文字母（挡掉 Archimedes / Parabola 这类）
+    const re3 = /(?:^|[^A-Za-z])([A-H])(?=\s*[.、．:：\)）]|\s|$)/g;
+    while ((m = re3.exec(t))) if (pool.includes(m[1])) set.add(m[1]);
+    return Array.from(set).sort();
+  };
+
+  // 从思维链里取答案。gpt-6.1-sol 这类模型经常 content 为空、结论只在 reasoning 里，
+  // 所以这里做两层：① 找最后一次显式结论；② 用选项原文反查（要求唯一命中）。
+  const extractFromReasoning = (txt, type, options) => {
+    const t = String(txt || "");
+    if (!t) return null;
+    // ① 显式结论，取最后一次出现（思维链里会反复推翻结论）
+    const re = /(?:最终答案|正确答案|答案是|答案|应选|正确选项|因此选|所以选|故选|选择|选)\s*[:：是为]?\s*([A-H](?:\s*[,，、\/]?\s*[A-H]){0,7})/g;
+    let m, last = null;
+    while ((m = re.exec(t))) {
+      const letters = m[1].replace(/[^A-H]/g, "");
+      if (letters) last = letters;
+    }
+    if (last) return last;
+    // ② 选项原文反查（推理里直接把选项写出来时）
+    if ((type === 0 || type === 1) && options && options.length) {
+      const flat = t.replace(/\s+/g, "");
+      const hits = [];
+      options.forEach((o, i) => {
+        const key = String(o).replace(/\s+/g, "");
+        // 太短的选项（如 "1"、"A"）容易误命中，要求至少 4 个字符
+        if (key.length >= 4 && flat.includes(key)) hits.push(i);
+      });
+      if (hits.length === 1) return String.fromCharCode(65 + hits[0]);
+    }
+    return null;
+  };
+
+  // 结构化输出协议：约定模型只输出一行「答案：B. 3月14日」。
+  // 一次拿到字母 + 选项原文：原文用来核对（防止字母错位），字母用来兜底（原文对不上时）。
+  const parseStructured = (txt) => {
+    const t = String(txt || "");
+    const re = /答案\s*[:：]?\s*([A-H](?:\s*[,，、\/]?\s*[A-H]){0,7})\s*(?:[.、．:：]\s*)?([^\n]{0,150})/g;
+    let m, last = null;
+    while ((m = re.exec(t))) {
+      const letters = m[1].replace(/[^A-H]/g, "");
+      if (letters) last = { letters: letters, text: String(m[2] || "").trim() };
+    }
+    return last;
+  };
+
+  // 把模型原始文本收敛成题目要的形式
+  const convertAnswer = (raw, type, options) => {
+    let ans = String(raw == null ? "" : raw)
+      .replace(/[\s\S]*?<\/think>/gi, "")
+      .replace(/<\/?(?:think|thinking|reasoning)>/gi, "")
+      .trim();
+    options = options || [];
+
+    // ① 结构化协议优先：只认「答案：X」这一行，分析文字一律不看
+    if (type === 0 || type === 1) {
+      const st = parseStructured(ans);
+      if (st) {
+        const letters = st.letters.split("");
+        if (type === 0) {
+          let idx = -1;
+          if (st.text) {
+            const byText = matchAnswer([st.text], options);
+            if (byText.length === 1) idx = byText[0];
+          }
+          if (idx < 0) {
+            const i2 = letters[0].charCodeAt(0) - 65;
+            if (i2 >= 0 && i2 < options.length) idx = i2;
+          }
+          if (idx >= 0) {
+            console.log("[答案解析] 结构化「" + st.letters + (st.text ? ". " + st.text.slice(0, 30) : "") + "」→ 第 " + (idx + 1) + " 项");
+            return options[idx];
+          }
+          return letters[0];
+        }
+        console.log("[答案解析] 结构化多选「" + st.letters + "」");
+        return letters.map((c) => { const i2 = c.charCodeAt(0) - 65; return (i2 >= 0 && i2 < options.length) ? options[i2] : c; });
+      }
+    }
+
+    if (type === 0) {
+      const ls = extractLetters(ans, options.length);
+      if (ls.length === 1) {
+        const idx = ls[0].charCodeAt(0) - 65;
+        ans = (idx >= 0 && idx < options.length) ? options[idx] : ls[0];
+      } else if (ls.length > 1) {
+        // 抽到多个 → 不猜，保留原文，交给上层如实报「解析歧义」
+        console.log("[答案解析] 单选抽到多个字母 " + ls.join("") + "，保留原文交由上层判定");
+      }
+    } else if (type === 1) {
+      const ls = extractLetters(ans, options.length);
+      if (ls.length) {
+        ans = ls.map((c) => { const i2 = c.charCodeAt(0) - 65; return (i2 >= 0 && i2 < options.length) ? options[i2] : c; });
+      } else {
+        const parts = ans.split(/[，,、;；\n]|\s{2,}/).map((s) => s.replace(/^[A-Da-d][\.、\)．]\s*/, "").trim()).filter(Boolean);
+        ans = parts.length ? parts : [ans];
+      }
+    } else if (type === 3) {
+      const t = ans.slice(0, 40);
+      if (/正确|^对|^是|√|true|^T$/i.test(t)) ans = "正确";
+      else if (/错误|^错|^否|×|false|^F$/i.test(t)) ans = "错误";
+      // 都不匹配 → 保持原文，由上层报告
+    }
+    if (type === 2 && String(ans).includes("#")) ans = String(ans).split("#");
+    return ans;
+  };
+
+  // fillAnswer 失败时的原因诊断（旧实现这条路没有任何 error 字段）
+  const diagnoseFill = (q, ans) => {
+    const t = String(q && q.type);
+    const opts = (q && q.options) || [];
+    const txt = ans instanceof Array ? ans.join(" | ") : String(ans == null ? "" : ans);
+    if (t === "0" || t === "1") {
+      if (!opts.length) return "页面没解析出选项文本（getOption 取到 0 个），题面可能是图片或结构不同";
+      let hit = [];
+      try { hit = matchAnswer(ans instanceof Array ? ans : [String(ans)], opts); } catch (e) {}
+      if (!hit.length) return "三种匹配（逐字 / 归一化 / 包含）都没命中任何选项。AI 原话：" + txt.slice(0, 120);
+      return "选项已匹配到第 " + hit.map((i) => i + 1).join(",") + " 项，但写进页面答案模型失败（#answer<qid> 为空）";
+    }
+    if (t === "3") {
+      if (!txt.trim()) return "判断题答案为空";
+      return "判断题选项匹配失败。AI 原话：" + txt.slice(0, 120);
+    }
+    if (t === "2" || t === "9" || t === "4" || t === "5" || t === "6" || t === "7") {
+      return "页面没找到可填写的 textarea / UE 编辑器";
+    }
+    return "未知题型，未做处理";
+  };
+
   class ServerApi {
     constructor(window2 = _unsafeWindow) {
       this.windowz = window2 || _unsafeWindow;
     }
-    // ===== AI 答案获取 =====
+
     async getAnswer(questionData) { return this.getAIAnswer(questionData); }
 
     async getAIAnswer(questionData) {
-      defaultConfig = getConfig(); // 每次都重新读取最新配置（用户可能已更新 API Key）
-      const apiKey = defaultConfig.thtoken || "";
-      // AI 请求超时（毫秒）：与 max_tokens=1000 匹配 —— 1000 token 的输出在 20s 内常来不及（尤其推理模型）。
-      // ⚠️ 必须与 _callAI 的 timeout 保持一致，故抽成常量，避免两处硬编码漂移。
+      defaultConfig = getConfig();
+      const apiKey = String(defaultConfig.thtoken || "").trim();
       const timeoutMs = 45000;
-      // 支持多提供商：默认 DeepSeek V4 Flash，也可通过配置指定其他兼容端点
-      const apiUrl = defaultConfig.aiApiUrl || "https://api.deepseek.com/v1/chat/completions";
-      const model = defaultConfig.aiModel || "deepseek-v4-flash";
+      const apiUrl = normalizeApiUrl(defaultConfig.aiApiUrl);
+      const model = String(defaultConfig.aiModel || "deepseek-chat").trim();
+
       const q = (questionData.question || "").toString().trim();
       const type = parseInt(questionData.type);
       const options = questionData.options || [];
-      const optionsText = options.length > 0
-        ? options.map((o, i) => String.fromCharCode(65 + i) + ". " + o).join("\n")
-        : "";
-      console.log("[AI答题] 第", (window._aiQIdx||0)+1, "题, 类型:", type, "题目:", q.substring(0, 80));
+      const optionsText = options.length > 0 ? options.map((o, i) => String.fromCharCode(65 + i) + ". " + o).join("\n") : "";
 
-      // 根据题型构造不同的 system prompt
-      let sysPrompt = "";
-      let userPrompt = q;
+      console.log("[AI答题] 第", (_unsafeWindow._aiQIdx || 0) + 1, "题 | 类型:", type, "| 端点:", apiUrl, "| 模型:", model, "| KeyLen:", apiKey.length, "| 推理模型:", isReasoningModel(model));
+
+      let sysPrompt = "", userPrompt = q;
       switch (type) {
         case 0:
-          sysPrompt = "你是超星学习通答题助手。请仔细阅读题目和选项，选出唯一正确答案。只输出选项字母（如 A），不要输出任何解释、标点或多余文字。";
-          userPrompt = optionsText ? `${q}\n\n选项：\n${optionsText}\n\n请输出正确答案的字母。` : q;
+          sysPrompt = "答题助手。只输出一行，格式固定：答案：<字母>. <该选项完整原文>。禁止输出任何分析、解释、步骤或多余文字。";
+          userPrompt = optionsText ? `题目：${q}\n${optionsText}\n\n只输出一行：答案：<字母>. <选项原文>` : q;
           break;
         case 1:
-          sysPrompt = "你是超星学习通答题助手。请仔细阅读题目和选项，选出所有正确答案。只输出选项字母（如 ABD 或 ABCD），不要输出任何解释、标点或多余文字。";
-          userPrompt = optionsText ? `${q}\n\n选项：\n${optionsText}\n\n请输出所有正确答案的字母。` : q;
+          sysPrompt = "答题助手。只输出一行，格式固定：答案：<字母组合>。禁止输出任何分析、解释或多余文字。";
+          userPrompt = optionsText ? `题目：${q}\n${optionsText}\n\n只输出一行：答案：<字母组合，如 ABD>` : q;
           break;
         case 2:
-          sysPrompt = "你是超星学习通答题助手。请根据题目填写空白处。如果有多个空，答案之间用 # 分隔。只输出答案内容，不要任何解释。";
-          userPrompt = `${q}\n\n请输出填空答案，多个空用 # 分隔。`;
+          sysPrompt = "答题助手。填出空白处答案，多个空用 # 分隔，只输出答案。";
+          userPrompt = q;
           break;
         case 3:
-          sysPrompt = "你是超星学习通答题助手。请判断题目说法是否正确。只输出一个字：「正确」或「错误」，不要任何解释。";
-          userPrompt = `${q}\n\n请判断对错。`;
+          sysPrompt = "答题助手。只输出「正确」或「错误」，禁止任何分析或解释。";
+          userPrompt = q;
           break;
         case 4: case 5: case 6: case 7:
-          sysPrompt = "你是超星学习通答题助手。简洁准确地回答问题，控制在200字以内。禁止使用Markdown格式（不要用**加粗**、- 列表、* 斜体等标记），直接输出纯文本答案要点。";
-          userPrompt = `${q}\n\n请简要回答，不要使用任何格式标记。`;
+          sysPrompt = "学习通答题助手。简洁回答，200字内，纯文本，不用Markdown。";
+          userPrompt = q;
           break;
         default:
-          sysPrompt = "你是超星学习通答题助手。请简洁准确地回答题目。只输出答案，不要多余解释。";
+          sysPrompt = "学习通答题助手。只输出答案，不要解释。";
       }
 
-      if (!q) return { form: "AI", answer: "", num: "", usenum: "" };
-      if (!apiKey) { console.warn("[AI答题] API Key 为空"); return { form: "AI", answer: "", num: "", usenum: "" }; }
+      if (!q) return { form: "AI", answer: "", num: "", usenum: "", errorCode: "EMPTY_Q", error: "题目文本为空，未发起请求" };
 
-      // 重试循环：最多 3 次，指数退避 2/4/6 秒，429 额外等待 10 秒
-      // ★ 方案B：**超时不重试** —— 超时＝模型/网络慢，重试几乎必然再超时（3 次 × 45s = 135s 纯浪费）。
-      //   429 限流则仍重试（服务端过载，等一会儿确实可能恢复）。
+      // 本地缓存：命中即返回，本次不产生任何 token
+      const ck = qKey(q, type, options);
+      const cacheHit = ansCacheGet(ck);
+      if (cacheHit) {
+        console.log("[AI答题] ✓ 本地缓存命中（" + ck + "），跳过请求");
+        return { form: "AI", answer: cacheHit, num: 0, usenum: 0, cached: true };
+      }
+
+      if (!apiKey) return { form: "AI", answer: "", num: "", usenum: "", errorCode: "NO_KEY", error: "API Key 为空（配置页「API Key」没保存成功，或存到了别的键名）" };
+      if (/[\s\u4e00-\u9fa5]/.test(apiKey)) console.warn("[AI答题] ⚠ API Key 里含空格/换行/中文，很可能导致 401");
+
       const MAX_RETRIES = 3;
       let lastError = null;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const result = await this._callAI(apiUrl, apiKey, model, sysPrompt, userPrompt, type, options, { timeoutMs: timeoutMs });
-          if (result.retry === true) {
+          const result = await this._callAI(apiUrl, apiKey, model, sysPrompt, userPrompt, type, options, { timeoutMs });
+          if (result && result.retry === true) {
             if (result.isTimeout) {
-              // 超时直接放弃：不再重试，避免一题拖到 2 分钟以上
               console.warn("[AI答题] 请求超时（" + (timeoutMs / 1000) + "s），不重试，本题按「无答案」处理");
-              lastError = result.reason;
+              lastError = result;
               break;
             }
-            // 429 或其它可重试错误
             const waitSec = result.is429 ? 10 + attempt * 3 : attempt * 2;
-            console.warn("[AI答题] 第" + attempt + "次尝试失败" + (result.is429 ? "(429限流)" : "") + "，" + waitSec + "秒后重试...");
-            await new Promise(r => setTimeout(r, waitSec * 1000));
-            lastError = result.reason;
+            console.warn("[AI答题] 第" + attempt + "次失败" + (result.is429 ? "(429限流)" : "") + "，" + waitSec + "秒后重试…", result.error);
+            await new Promise((r) => setTimeout(r, waitSec * 1000));
+            lastError = result;
             continue;
           }
-          // 成功
+          if (result && result.answer && String(result.answer).length) ansCacheSet(ck, result.answer);
           return result;
         } catch (e) {
-          console.warn("[AI答题] 第" + attempt + "次尝试异常:", e);
-          lastError = e;
-          if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, attempt * 2000));
+          console.warn("[AI答题] 第" + attempt + "次异常:", e);
+          lastError = { errorCode: "EXCEPTION", error: String(e && e.message ? e.message : e) };
+          if (attempt < MAX_RETRIES) await new Promise((r) => setTimeout(r, attempt * 2000));
         }
       }
-      console.error("[AI答题] " + MAX_RETRIES + "次重试全部失败:", lastError);
-      return { form: "AI", answer: "", num: "", usenum: "" };
+      const le = lastError || {};
+      const msgText = le.error || le.detail || "未知原因";
+      console.error("[AI答题] ✗ 全部尝试失败:", le);
+      return { form: "AI", answer: "", num: "", usenum: "", errorCode: le.errorCode || "ALL_FAILED", error: msgText };
     }
 
-    // 内部方法：发起单次 AI API 调用
-    _callAI(apiUrl, apiKey, model, sysPrompt, userPrompt, type, options) {
+    _callAI(apiUrl, apiKey, model, sysPrompt, userPrompt, type, options, opts) {
+      return this._runLadder(apiUrl, apiKey, model, sysPrompt, userPrompt, type, options, opts);
+    }
+
+    async _runLadder(apiUrl, apiKey, model, sysPrompt, userPrompt, type, options, opts) {
+      const timeoutMs = (opts && opts.timeoutMs) || 45000;
+      const attempts = buildAttempts(apiUrl, model, sysPrompt, userPrompt, type);
+      const trace = [];
+      let lastEmpty = null;
+      for (let i = 0; i < attempts.length; i++) {
+        let a = attempts[i];
+        // 上一次因「只吐思维链」失败 → 这次在 user 消息末尾追加硬约束，逼它直接出答案。
+        // 只改 user、不动 system，前缀缓存仍能命中。
+        if (lastEmpty) {
+          try {
+            const b = JSON.parse(JSON.stringify(a.body));
+            if (Array.isArray(b.messages) && b.messages.length) {
+              b.messages[b.messages.length - 1].content += "\n\n直接给出最终答案，只输出字母，不要写任何推理过程。";
+              a = Object.assign({}, a, { body: b, tag: a.tag + "+direct" });
+            }
+          } catch (e) {}
+        }
+        const r = await this._postOnce(a, apiKey, timeoutMs, type, options);
+        if (r.ok) {
+          let u = pickUsage(r.json);
+          if (!u.pt && !u.ct) {
+            // 部分中转站不返回 usage，这里按字符数粗估，并标注「估算」，避免面板上一片 0
+            u = { pt: Math.ceil((sysPrompt.length + userPrompt.length) / 1.6), ct: Math.ceil(String(r.text || "").length / 1.6), tt: 0, estimated: true };
+            u.tt = u.pt + u.ct;
+          }
+          const converted = convertAnswer(r.text, type, options);
+          const shown = Array.isArray(converted) ? converted.join(" | ") : String(converted);
+          // 答错时最需要的两条信息：模型原话、最终落到哪个选项。一并写进面板
+          const parseNote = "AI 原话「" + String(r.text).slice(0, 50) + "」→ 填入「" + shown.slice(0, 80) + "」";
+          console.log("[AI答题] ✓ " + a.tag + " 通过 | 来源 " + (r.source || "?") + " | Token 输入 " + u.pt + " 输出 " + u.ct + (u.estimated ? "（估算）" : "") + "\n           " + parseNote);
+          return { form: "AI", answer: converted, num: u.pt, usenum: u.ct,
+            totalTokens: u.tt, estimated: !!u.estimated, source: r.source, parseNote,
+            trace: trace.concat([a.tag + " → OK(" + (r.source || "?") + ")"]).join(" ; ") };
+        }
+        trace.push(a.tag + " → " + (r.code || r.kind) + " HTTP " + r.status + " " + String(r.detail || "").slice(0, 60).replace(/\s+/g, " "));
+        console.warn("[AI答题] ✗ " + a.tag + " | " + r.kind + " | HTTP " + r.status + " | " + String(r.detail || "").slice(0, 220));
+        // 该服务商不认这个「关思维链」变体 → 记住，后续题目不再浪费一次往返
+        if (r.kind === "param" && a.variant && variantOk(a.variant)) {
+          BAD_VARIANT.add(a.variant);
+          console.warn("[AI答题] 该服务商拒绝参数变体 \"" + a.variant + "\"，后续跳过。服务端说：" + String(r.detail || "").slice(0, 120));
+        }
+        // 思维链吃满额度 / content 装的是分析：都不算致命，继续试下一级（末尾有加大预算那一级）
+        if (r.code === "CONTENT_EMPTY" || r.code === "CONTENT_ANALYSIS") { lastEmpty = r; continue; }
+        if (r.kind === "retry") {
+          return { retry: true, is429: r.status === 429, isTimeout: false, errorCode: r.code, error: r.detail };
+        }
+        if (r.kind !== "param") {
+          return { form: "AI", answer: "", num: "", usenum: "", retry: false, errorCode: r.code, httpStatus: r.status,
+            error: r.code + "｜HTTP " + r.status + "｜" + r.detail + "\n【尝试链】" + trace.join(" ; ") };
+        }
+      }
+      if (lastEmpty) {
+        return { form: "AI", answer: "", num: "", usenum: "", retry: false, errorCode: "CONTENT_EMPTY",
+          error: "模型只输出了思维链、没有给出答案（就连加大预算那一级也一样）。这题大概率被思维链绕住了，建议手动答。\n【尝试链】" + trace.join(" ; ") };
+      }
+      return { form: "AI", answer: "", num: "", usenum: "", retry: false, errorCode: "PARAM_ALL_FAILED",
+        error: "服务端拒绝了每一种请求格式（参数组合 × 端点）。\n【尝试链】" + trace.join(" ; ") };
+    }
+
+    _postOnce(attempt, apiKey, timeoutMs, type, options) {
       return new Promise((resolve) => {
-        // 超时可由调用方经 options.timeoutMs 指定（默认 45s），保证与上层「超时不重试」判定用的是同一个值
-        const _timeoutMs = (options && options.timeoutMs) || 45000;
+        const out = (o) => resolve(o);
+        if (typeof _GM_xmlhttpRequest !== "function") {
+          return out({ ok: false, kind: "fatal", status: null, code: "NO_GM_XHR", detail: "GM_xmlhttpRequest 缺失：@grant 未生效，或当前脚本管理器不支持跨域请求" });
+        }
+        let payload;
+        try { payload = JSON.stringify(attempt.body); }
+        catch (e) { return out({ ok: false, kind: "fatal", status: null, code: "BAD_PAYLOAD", detail: String(e && e.message) }); }
+
         _GM_xmlhttpRequest({
           method: "POST",
-          url: apiUrl,
+          url: attempt.url,
           headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-          data: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: sysPrompt }, { role: "user", content: userPrompt }], temperature: 0.1, max_tokens: 1000 }),
-          timeout: _timeoutMs, // 与 max_tokens=1000 匹配：1000 token 的输出在 20s 内常来不及（尤其推理模型）→ 45s（由上层传入）
+          data: payload,
+          timeout: timeoutMs,
           onload: (res) => {
-            console.log("[AI答题] HTTP", res.status, "长度", (res.responseText||"").length);
-            if (res.status === 429 || res.status >= 500) {
-              resolve({ retry: true, is429: true, reason: "HTTP " + res.status + " 服务器过载" });
-              return;
+            const st = res.status, body = res.responseText || "";
+            if (st === 0) return out({ ok: false, kind: "fatal", status: 0, code: "XHR_BLOCKED",
+              detail: "status=0：请求被拦截。① 篡改猴→本脚本→设置→用户域白名单 加 * 或该域名；② 广告拦截插件；③ https 页面请求 http 接口" });
+            if (st === 401 || st === 403) return out({ ok: false, kind: "auth", status: st, code: "AUTH_" + st,
+              detail: "Key 无效 / 无该模型权限 / 含杂字符。服务端说：" + body.slice(0, 400) });
+            if (st === 429) return out({ ok: false, kind: "retry", status: 429, code: "RATE_LIMIT", detail: "429 限流或余额不足：" + body.slice(0, 200) });
+            if (st >= 500) return out({ ok: false, kind: "retry", status: st, code: "SERVER_" + st, detail: st + " 服务端错误：" + body.slice(0, 200) });
+            if (st !== 200) {
+              if (MODEL_ERR_RE.test(body)) return out({ ok: false, kind: "model", status: st, code: "MODEL_NOT_FOUND",
+                detail: "模型名 " + attempt.body.model + " 不被该服务商接受（400/404）。去服务商控制台或 /v1/models 抄准确 ID。服务端说：" + body.slice(0, 400) });
+              if (PARAM_ERR_RE.test(body)) return out({ ok: false, kind: "param", status: st, code: "PARAM_" + st, detail: body.slice(0, 400) });
+              return out({ ok: false, kind: "param", status: st, code: "HTTP_" + st, detail: body.slice(0, 400) });
             }
-            if (res.status !== 200) {
-              console.error("[AI答题] 错误响应:", res.status, (res.responseText||"").substring(0, 200));
-              // 非429错误直接放弃（如401密钥错误等）
-              if (res.status === 401 || res.status === 403) {
-                resolve({ form: "AI", answer: "", num: "", usenum: "" });
-                return;
-              }
-              resolve({ retry: true, is429: false, reason: "HTTP " + res.status });
-              return;
+            let j;
+            try { j = JSON.parse(body); }
+            catch (e) { return out({ ok: false, kind: "fatal", status: 200, code: "BAD_JSON", detail: "响应不是 JSON（可能返回了 HTML 错误页/登录页）：" + body.slice(0, 300) }); }
+            if (j && j.error) {
+              const msg = j.error.message || j.error.msg || JSON.stringify(j.error);
+              if (MODEL_ERR_RE.test(msg)) return out({ ok: false, kind: "model", status: 200, code: "MODEL_NOT_FOUND", detail: msg });
+              if (PARAM_ERR_RE.test(msg)) return out({ ok: false, kind: "param", status: 200, code: "PARAM_API", detail: msg });
+              return out({ ok: false, kind: "fatal", status: 200, code: "API_ERROR", detail: msg });
             }
-            try {
-              const j = JSON.parse(res.responseText);
-              let ans = (j.choices && j.choices[0].message.content || "").trim();
-              // 去除推理模型（DeepSeek-R1 / 思考模式等）残留的思维链标签及其内容，
-              // 否则思维链里的英文字母(A/B/C/D)会被误当作选项，导致答案错误或为空
-              ans = ans.replace(/[\s\S]*?<\/think>/gi, "").replace(/<\/?(?:think|thinking|reasoning)>/gi, "").trim();
-              console.log("[AI答题] 原始返回:", ans);
-              // 诊断：内容为空多为「输出被 max_tokens 截断」或「输出全部消耗在思维链上」，
-              //   此时题目会拿不到答案（页面答案模型必然为空），排查先看这一行。
-              if (!ans) console.warn("[AI答题] 返回内容为空（可能输出被 max_tokens=1000 截断，或全部消耗在思维链里）→ 本题将无答案可填");
-              // 选择题：字母 → 选项文本映射（matchAnswer 做文本精确匹配）
-              if (type === 0) {
-                ans = (ans.match(/[A-Da-d]/) || [])[0] || ans;
-                ans = ans.toUpperCase();
-                const idx = ans.charCodeAt(0) - 65;
-                if (idx >= 0 && idx < options.length) {
-                  console.log("[AI答题] 单选 " + ans + " → 选项文本:", options[idx]);
-                  ans = options[idx];
+            const pc = pickContent(j);
+            if (!pc.text) {
+              if (pc.source === "reasoning-only") {
+                // 先试着从思维链里把结论抠出来——gpt-6.1 这类模型常见「结论有了、content 被截成空」
+                const got = extractFromReasoning(pc.reasoning, type, options);
+                if (got) {
+                  console.warn("[AI答题] content 为空，从思维链抠到答案：" + got);
+                  return out({ ok: true, text: got, json: j, source: "reasoning-extracted" });
                 }
-              } else if (type === 1) {
-                const letters = (ans.match(/[A-Da-d]+/g) || []).join("").toUpperCase();
-                const uniq = [...new Set(letters.split(""))].filter(c => c >= "A" && c <= "D").sort().join("");
-                if (uniq) {
-                  const texts = uniq.split("").map(c => { const idx = c.charCodeAt(0) - 65; return (idx >= 0 && idx < options.length) ? options[idx] : c; });
-                  console.log("[AI答题] 多选 " + uniq + " → 选项文本:", texts.join(", "));
-                  ans = texts;
-                } else {
-                  // 兼容部分模型直接返回选项文本的情况：按分隔符切分后交给文本精确匹配
-                  const parts = ans.split(/[，,、;；\n]|\s{2,}/).map(s => s.replace(/^[A-Da-d][\.、\)．]\s*/, "").trim()).filter(Boolean);
-                  console.log("[AI答题] 多选(文本返回) →", parts.join(", "));
-                  ans = parts.length ? parts : [ans];
-                }
-              } else if (type === 3) {
-                if (ans.includes("正确")||ans.includes("对")||ans.includes("True")||ans.includes("true")||ans.includes("√")||ans.includes("T")) ans = "正确";
-                else ans = "错误";
+                // 抠不到：绝不能把思维链当答案（旧实现就是这么错的）
+                return out({ ok: false, kind: "retry", status: 200, code: "CONTENT_EMPTY",
+                  detail: "content 为空，输出额度全花在思维链上（reasoning " + String(pc.reasoning || "").length + " 字符，尾部：" + String(pc.reasoning || "").slice(-80) + "）",
+                  reasoning: pc.reasoning });
               }
-              if (type === 2 && ans.includes("#")) ans = ans.split("#");
-              const usage = j.usage || {};
-              const promptTokens = usage.prompt_tokens || 0;
-              const completionTokens = usage.completion_tokens || 0;
-              const totalTokens = usage.total_tokens || (promptTokens + completionTokens);
-              console.log("[AI答题] Token消耗: 输入", promptTokens, "输出", completionTokens, "合计", totalTokens);
-              resolve({ form: "AI", answer: ans, num: promptTokens, usenum: completionTokens, totalTokens: totalTokens });
-            } catch (e) { resolve({ form: "AI", answer: "", num: "", usenum: "" }); }
+              return out({ ok: false, kind: "fatal", status: 200, code: "EMPTY_CONTENT",
+                detail: "HTTP 200 但正文与思维链都为空，或中转站剥离了 content。原始响应：" + body.slice(0, 500) });
+            }
+            // content 有值，但可能是「分析过程」——部分中转站把 reasoning 塞进了 content 字段。
+            // 典型开头："我们需要回答选择题。需要了解常识：…" 且尾部被 max_completion_tokens 截断。
+            if ((type === 0 || type === 1 || type === 3) && pc.text.length > 40) {
+              const head = pc.text.trim();
+              const looksAnalysis = /^(我们|让我|首先|题目|分析|需要|思考|这个|该题|这道|要回答|判断)/.test(head);
+              if (looksAnalysis) {
+                const got = extractFromReasoning(pc.text, type, options);
+                if (got) {
+                  console.warn("[AI答题] content 装的是分析文本，从中抠到答案：" + got);
+                  return out({ ok: true, text: got, json: j, source: "content-extracted" });
+                }
+                return out({ ok: false, kind: "retry", status: 200, code: "CONTENT_ANALYSIS",
+                  detail: "content 装的是分析过程而不是答案（长 " + pc.text.length + " 字符，尾部：" + pc.text.slice(-70) + "），多半被 max_completion_tokens 截断",
+                  reasoning: pc.text });
+              }
+            }
+            out({ ok: true, text: pc.text, json: j, source: pc.source });
           },
-          // 超时标记：超时属于「模型慢」，重试大概率还是慢 → 由上层直接放弃（不浪费 3 倍时间）
-          onerror: () => { resolve({ retry: true, is429: false, reason: "网络错误" }); },
-          ontimeout: () => { resolve({ retry: true, is429: false, isTimeout: true, reason: "超时" }); }
+          onerror: () => out({ ok: false, kind: "retry", status: null, code: "NETWORK",
+            detail: "网络层错误：域名不可达 / DNS / TLS / @connect 被拒 / 代理拦截" }),
+          ontimeout: () => out({ ok: false, kind: "retry", status: null, code: "TIMEOUT",
+            detail: timeoutMs + "ms 内无响应（模型慢或网络差）" })
         });
       });
     }
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // F12 自检：__cxDiag()
+  // ══════════════════════════════════════════════════════════════════════
+  const cxDiag = async (sink) => {
+    const out = [];
+    const emit = (level, msg) => {
+      const text = typeof msg === "string" ? msg : (() => { try { return JSON.stringify(msg); } catch (e) { return String(msg); } })();
+      out.push({ level, text });
+      try { (level === "error" ? console.error : level === "warn" ? console.warn : console.log).call(console, text); } catch (e) {}
+      if (typeof sink === "function") { try { sink(level, text); } catch (e) {} }
+    };
+    const cfg = getConfig();
+    const url = normalizeApiUrl(cfg.aiApiUrl);
+    const model = String(cfg.aiModel || "deepseek-chat").trim();
+    const key = String(cfg.thtoken || "").trim();
+
+    emit("info", "构建: " + CX_BUILD);
+    emit("info", "API地址: " + url + (cfg.aiApiUrl ? "" : "（留空，用默认）"));
+    emit("info", "模型: " + model + (cfg.aiModel ? "" : "（留空，用默认）") + " | 推理模型判定: " + isReasoningModel(model));
+    if (BAD_VARIANT.size) emit("warn", "该服务商拒绝过的「关思维链」变体：" + Array.from(BAD_VARIANT).join(", ") + "（后续自动跳过）");
+    else emit("info", "关思维链变体：全部待验证（首个请求会逐条探测）");
+    emit("info", "Key: " + (key ? ("已填 " + key.length + " 位，前缀 " + key.slice(0, 7) + "…") : "【空】"));
+    emit("info", "视频倍速: " + (cfg.videoRateOn !== false ? (cfg.videoRate || 16) + "x（已开启）" : "已关闭，按原速"));
+    emit("info", "答题间隔: " + cfg.answerInterval + " 秒 | 任务间隔: " + cfg.interval + " 秒");
+    emit("info", "答案缓存: " + Object.keys(ansCacheLoad()).length + " 条（上限 " + ANS_CACHE_MAX + "）");
+
+    if (!key) { emit("error", "✗ API Key 为空 —— 这是「暂无答案」的第一号原因"); return out; }
+    if (/[\s\u4e00-\u9fa5]/.test(key)) emit("warn", "⚠ Key 里含空格/换行/中文，请重新粘贴");
+    if (typeof _GM_xmlhttpRequest !== "function") { emit("error", "✗ GM_xmlhttpRequest 缺失"); return out; }
+
+    const base = url.replace(/\/chat\/completions$/i, "");
+    emit("info", "→ GET " + base + "/models 列可用模型…");
+    await new Promise((r) => _GM_xmlhttpRequest({
+      method: "GET", url: base + "/models",
+      headers: { Authorization: "Bearer " + key }, timeout: 15000,
+      onload: (res) => {
+        if (res.status === 200) {
+          try {
+            const j = JSON.parse(res.responseText);
+            const ids = (j.data || j.models || []).map((m) => m.id || m.name).filter(Boolean);
+            emit("info", "该服务商可用模型（" + ids.length + " 个）：" + (ids.length ? ids.join(", ") : "(空列表)"));
+            if (ids.length && !ids.includes(model)) emit("error", "⚠ 你填的「" + model + "」不在上面列表里 —— 名字不准确，这就是 400 的原因");
+            else if (ids.length) emit("success", "✓ 模型名在列表中");
+          } catch (e) { emit("warn", "/models 返回非 JSON：" + (res.responseText || "").slice(0, 300)); }
+        } else {
+          emit("warn", "/models HTTP " + res.status + "（部分中转站不提供该接口，可忽略）：" + (res.responseText || "").slice(0, 200));
+        }
+        r();
+      },
+      onerror: () => { emit("warn", "/models 网络层错误（可忽略）"); r(); },
+      ontimeout: () => { emit("warn", "/models 超时（可忽略）"); r(); }
+    }));
+
+    emit("info", "→ 逐级试探参数阶梯…");
+    const attempts = buildAttempts(url, model, "学习通答题助手。只输出答案。", "1+1=?", 0);
+    for (let i = 0; i < attempts.length; i++) {
+      const a = attempts[i];
+      const r = await new ServerApi()._postOnce(a, key, 20000, 0, []);
+      const head = a.tag + " [" + Object.keys(a.body).join(",") + "]";
+      if (r.ok) {
+        emit("success", "✓ " + head + " 通过，正文：" + String(r.text).slice(0, 60));
+        emit("success", "✓ 这一组参数可用。若答题仍失败，问题在选项文本匹配，不在 API。");
+        break;
+      }
+      emit("warn", "✗ " + head + " → " + r.kind + " HTTP " + r.status + " " + String(r.detail || "").slice(0, 200));
+      if (r.kind !== "param") {
+        emit("error", "✗ 在 " + a.tag + " 阶段终止（" + r.kind + "），不再降级：" + String(r.detail || "").slice(0, 300));
+        break;
+      }
+    }
+    emit("info", "诊断结束。点右上角「复制日志」可整段导出。");
+    return out;
+  };
+  try { _unsafeWindow.__cxDiag = cxDiag; } catch (e) {}
+
+  // ── 现场快照：把当前题目的 DOM 结构导出来，用于定位「为什么填不进去」──
+  let CX_LAST_FRAME = null;
+  const cxSnapshot = () => {
+    const out = [];
+    out.push("构建: " + CX_BUILD + "  时间: " + new Date().toLocaleString());
+    const f = CX_LAST_FRAME;
+    if (!f) { out.push("当前没有活动答题窗口（请先让脚本跑到答题那一步）"); return out.join("\n"); }
+    let doc;
+    try { doc = f.document; } catch (e) { out.push("跨域，读不到文档"); return out.join("\n"); }
+    if (!doc) { out.push("文档为空"); return out.join("\n"); }
+    try { out.push("URL: " + f.location.href); } catch (e) {}
+    const pick = (sel) => { try { return doc.querySelectorAll(sel); } catch (e) { return []; } };
+    const cnt = (scope, sel) => { try { return scope.querySelectorAll(sel).length; } catch (e) { return -1; } };
+
+    let nodes = pick(".TiMu"), kind = ".TiMu";
+    if (!nodes.length) { nodes = pick(".questionLi"); kind = ".questionLi"; }
+    if (!nodes.length) { nodes = pick(".mark_table"); kind = ".mark_table"; }
+    out.push("题目容器 " + kind + " 数量: " + nodes.length);
+
+    if (!nodes.length) {
+      out.push("");
+      out.push("[诊断] 一个题目容器都没匹配到，说明页面类名变了。候选计数：");
+      ["div[class*=TiMu]", "div[class*=question]", "div[class*=mark]", "ul[class*=answer]", "div[class*=answerBg]"].forEach((s) => {
+        out.push("  " + s + " → " + pick(s).length);
+      });
+      try { out.push("[body 前 800 字] " + String(doc.body && doc.body.innerHTML || "").replace(/\s+/g, " ").slice(0, 800)); } catch (e) {}
+      return out.join("\n");
+    }
+
+    const N = Math.min(nodes.length, 2);
+    for (let i = 0; i < N; i++) {
+      const t = nodes[i];
+      out.push("");
+      out.push("===== 第 " + (i + 1) + " 题 =====");
+      let inp = null;
+      try { inp = t.querySelector('input[id^="answer"]'); } catch (e) {}
+      const qid = inp ? String(inp.id).slice(6) : null;
+      out.push("#answer 隐藏域: " + (inp ? "#" + inp.id + " = \"" + inp.value + "\"" : "未找到"));
+      out.push("qid: " + (qid || "未取到"));
+      let at = [];
+      try { at = t.querySelectorAll("input[name^=answertype]"); } catch (e) {}
+      out.push("answertype input: " + at.length + (at.length ? " value=" + at[0].value : ""));
+      out.push("计数 → ul:" + cnt(t, "ul") + "  ul li:" + cnt(t, "ul li") +
+        "  li .after:" + cnt(t, "ul li .after") +
+        "  li .num_option:" + cnt(t, "li .num_option, li .num_option_dx") +
+        "  .answerBg:" + cnt(t, ".answerBg") +
+        "  radio/checkbox:" + cnt(t, "input[type=radio], input[type=checkbox]") +
+        "  textarea:" + cnt(t, "textarea"));
+      if (qid) {
+        out.push(".choice" + qid + ": " + pick(".choice" + qid).length +
+          "  li[qid='" + qid + "']: " + pick("li[qid='" + qid + "']").length);
+      }
+      let lis = [];
+      try { lis = t.querySelectorAll("ul li"); } catch (e) {}
+      for (let k = 0; k < Math.min(lis.length, 6); k++) {
+        const li = lis[k];
+        let after = null, no = null;
+        try { after = li.querySelector(".after"); } catch (e) {}
+        try { no = li.querySelector(".num_option, .num_option_dx"); } catch (e) {}
+        out.push("  li[" + k + "] class=\"" + String(li.className || "").slice(0, 36) + "\"" +
+          "  after=\"" + String(after ? after.textContent : "(无)").replace(/\s+/g, " ").slice(0, 46) + "\"" +
+          "  num_option=" + (no ? "\"" + String(no.getAttribute("data") || no.textContent || "").slice(0, 8) + "\"" : "(无)") +
+          "  文本=\"" + String(li.textContent || "").replace(/\s+/g, " ").slice(0, 46) + "\"");
+      }
+      try { out.push("[HTML 前 900 字] " + String(t.innerHTML || "").replace(/\s+/g, " ").slice(0, 900)); } catch (e) {}
+    }
+    return out.join("\n");
+  };
+  try { _unsafeWindow.__cxSnap = cxSnapshot; } catch (e) {}
+
+  // ── 页面内诊断面板：不依赖 F12 ────────────────────────────────────────
+  const cxShowText = (doc, text) => {
+    try {
+      const old = doc.getElementById("cx-textbox");
+      if (old) old.remove();
+      const mask = doc.createElement("div");
+      mask.id = "cx-textbox";
+      mask.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center";
+      const wrap = doc.createElement("div");
+      wrap.style.cssText = "width:min(920px,88vw);height:min(72vh,660px);background:#fff;border-radius:10px;display:flex;flex-direction:column;padding:12px;gap:8px;box-shadow:0 12px 40px rgba(0,0,0,.3)";
+      const ta = doc.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "flex:1;width:100%;font:12px/1.55 Consolas,Menlo,monospace;border:1px solid #ddd;border-radius:6px;padding:8px;resize:none;box-sizing:border-box";
+      const bar = doc.createElement("div");
+      bar.style.cssText = "display:flex;gap:8px;justify-content:flex-end";
+      const cp = doc.createElement("button");
+      cp.textContent = "全选复制";
+      cp.style.cssText = "padding:6px 14px;border-radius:6px;border:1px solid #409eff;background:#409eff;color:#fff;cursor:pointer";
+      cp.onclick = () => { ta.focus(); ta.select(); try { doc.execCommand("copy"); } catch (e) {} };
+      const cl = doc.createElement("button");
+      cl.textContent = "关闭";
+      cl.style.cssText = "padding:6px 14px;border-radius:6px;border:1px solid #ccc;background:#fff;cursor:pointer";
+      cl.onclick = () => mask.remove();
+      bar.appendChild(cp); bar.appendChild(cl);
+      wrap.appendChild(ta); wrap.appendChild(bar); mask.appendChild(wrap);
+      doc.body.appendChild(mask);
+      ta.focus(); ta.select();
+    } catch (e) { console.log("[诊断UI] 浮层创建失败:", e); }
+  };
+
+  const injectDiagUI = (askStore) => {
+    try {
+      const W = _unsafeWindow;
+      const doc = (W.top && W.top.document) ? W.top.document : document;
+      if (doc.getElementById("cx-tools")) return;
+      GM_addStyle("#cx-tools{position:fixed;right:20px;bottom:80px;z-index:99998;display:flex;flex-direction:column;gap:6px;font:12px/1.4 -apple-system,'Microsoft YaHei',sans-serif}#cx-tools button{cursor:pointer;border:1px solid rgba(64,158,255,.5);background:rgba(64,158,255,.18);color:#409eff;border-radius:6px;padding:5px 10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:all .2s}#cx-tools button:hover{background:rgba(64,158,255,.34);color:#fff}");
+      const box = doc.createElement("div");
+      box.id = "cx-tools";
+      const mk = (label, fn) => { const b = doc.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = fn; return b; };
+      const push = (level, text) => { if (askStore) { try { askStore.log(text, level); } catch (e) {} } };
+
+      box.appendChild(mk("诊断", async () => {
+        if (askStore) { try { askStore.task.log.length = 0; askStore.dialogVisible = true; askStore.task.name = "诊断中"; } catch (e) {} }
+        push("info", "===== 诊断开始 =====");
+        try { await cxDiag(push); } catch (e) { push("error", "诊断异常：" + (e && e.message ? e.message : e)); }
+        push("success", "===== 诊断结束，点「复制日志」可整段导出 =====");
+      }));
+      box.appendChild(mk("复制日志", () => {
+        let text = "";
+        try { text = (askStore ? askStore.task.log : []).map((i) => i.time + " " + i.msg).join("\n"); } catch (e) {}
+        if (!text) text = "(暂无日志)";
+        let ok = false;
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); ok = true; } } catch (e) {}
+        try { W.__cxLogText = text; } catch (e) {}
+        try { console.log("[日志导出] 共 " + text.split("\n").length + " 行\n" + text); } catch (e) {}
+        push("success", "日志已导出 " + text.split("\n").length + " 行" + (ok ? "（已写入剪贴板）" : "（剪贴板不可用，已弹出文本框供手动复制）"));
+        if (!ok) cxShowText(doc, text);
+      }));
+      box.appendChild(mk("抓现场", () => {
+        const text = cxSnapshot();
+        let ok = false;
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); ok = true; } } catch (e) {}
+        try { console.warn("[现场快照]\n" + text); } catch (e) {}
+        push("info", "已抓取现场快照" + (ok ? "（已写入剪贴板）" : "（剪贴板不可用，已弹出文本框）"));
+        if (!ok) cxShowText(doc, text);
+      }));
+      box.appendChild(mk("清缓存", () => {
+        const n = Object.keys(ansCacheLoad()).length;
+        try { _GM_setValue(ANS_CACHE_KEY, {}); } catch (e) {}
+        push("success", "答案缓存已清空 " + n + " 条");
+      }));
+      box.appendChild(mk("日志面板", () => {
+        if (askStore) { try { askStore.dialogVisible = true; } catch (e) {} }
+      }));
+      doc.body.appendChild(box);
+    } catch (e) { console.log("[诊断UI] 注入失败:", e); }
+  };
+
+  // 缓存管理：__cxCacheStat() 看命中规模；__cxClearCache() 清空
+  try {
+    _unsafeWindow.__cxCacheStat = () => {
+      const o = ansCacheLoad(), ks = Object.keys(o);
+      console.log("[答案缓存] 共 " + ks.length + " 条（上限 " + ANS_CACHE_MAX + "）");
+      return ks.length;
+    };
+    _unsafeWindow.__cxClearCache = () => {
+      const n = Object.keys(ansCacheLoad()).length;
+      try { _GM_setValue(ANS_CACHE_KEY, {}); } catch (e) {}
+      console.log("[答案缓存] 已清空 " + n + " 条");
+      return n;
+    };
+  } catch (e) {}
+
   function getDefaultExportFromCjs(x) {
     return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x.default : x;
   }
+
+  // ══════════ Typr 字体解析（学习通 font-cxsecret 反混淆用，原样保留）══════════
   var Typr = { parse: function(buff) {
     var bin = Typr._bin, data = new Uint8Array(buff), offset = 0;
     bin.readFixed(data, offset), offset += 4;
@@ -1230,7 +1934,7 @@
     var gsub = font.GSUB;
     if (null == gsub)
       return gls;
-    for (var llist = gsub.lookupList, flist = gsub.featureList, wsep = '\n	" ,.:;!?()  ،', R = "آأؤإاةدذرزوٱٲٳٵٶٷڈډڊڋڌڍڎڏڐڑڒړڔڕږڗژڙۀۃۄۅۆۇۈۉۊۋۍۏےۓەۮۯܐܕܖܗܘܙܞܨܪܬܯݍݙݚݛݫݬݱݳݴݸݹࡀࡆࡇࡉࡔࡧࡩࡪࢪࢫࢬࢮࢱࢲࢹૅેૉ૊૎૏ૐ૑૒૝ૡ૤૯஁ஃ஄அஉ஌எஏ஑னப஫஬", ci = 0; ci < gls.length; ci++) {
+    for (var llist = gsub.lookupList, flist = gsub.featureList, wsep = '\n\t" ,.:;!?()  ،', R = "آأؤإاةدذرزوٱٲٳٵٶٷڈډڊڋڌڍڎڏڐڑڒړڔڕږڗژڙۀۃۄۅۆۇۈۉۊۋۍۏےۓەۮۯܐܕܖܗܘܙܞܨܪܬܯݍݙݚݛݫݬݱݳݴݸݹࡀࡆࡇࡉࡔࡧࡩࡪࢪࢫࢬࢮࢱࢲࢹૅેૉ૊૎૏ૐ૑૒૝ૡ૤૯஁ஃ஄அஉ஌எஏ஑னப஫஬", ci = 0; ci < gls.length; ci++) {
       var gl = gls[ci], slft = 0 == ci || -1 != wsep.indexOf(str[ci - 1]), srgt = ci == gls.length - 1 || -1 != wsep.indexOf(str[ci + 1]);
       slft || -1 == R.indexOf(str[ci - 1]) || (slft = true), srgt || -1 == R.indexOf(str[ci]) || (srgt = true), srgt || -1 == "ꡲ્૗".indexOf(str[ci + 1]) || (srgt = true), slft || -1 == "ꡲ્૗".indexOf(str[ci]) || (slft = true);
       var feat = null;
@@ -1409,6 +2113,7 @@
     }
     state.x = x, state.y = y, state.nStems = nStems, state.haveWidth = haveWidth, state.width = width, state.open = open;
   };
+
   const Typr$1 = getDefaultExportFromCjs(Typr), questionType = { "单选题": "0", "多选题": "1", "填空题": "2", "判断题": "3", "简答题": "4", "名词解释": "5", "论述题": "6", "计算题": "7" }, log = (data, type = "info") => {
     var _a;
     const style = `color: ${{ info: "orange", success: "green", error: "red" }[type]}; font-weight: bold;`;
@@ -1421,8 +2126,6 @@
       resolve();
     }, 1e3 * time);
   }),
-  // 注意：sleep(t) 的参数单位是「秒」(内部 1e3 * t)。
-  // 提交流程里需要的是毫秒级等待，若误用 sleep(500) 会真的等 500 秒，故单独提供 sleepMs。
   sleepMs = (ms) => new Promise((resolve) => {
     setTimeout(resolve, ms);
   }), waitIframeLoaded = (iframe) => new Promise((resolve) => {
@@ -1458,23 +2161,47 @@
       }
     }, 100);
     const timeoutId = setTimeout(finish, 15e3);
-  }), removeHtml = (html) => null == html ? "" : html.replace(/<((?!img|sub|sup|br)[^>]+)>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").replace(/<br\s*\/?>/g, "\n").replace(/<img.*?src="(.*?)".*?>/g, '<img src="$1"/>').trim(), cl = (str) => str.replace(/^【.*?】\s*/, "").replace(/\s*（\d+\.\d+分）$/, ""), getQuestion = (type, html) => {
+  }), removeHtml = (html) => null == html ? "" : html.replace(/<((?!img|sub|sup|br)[^>]+)>/g, "").replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").replace(/<br\s*\/?>/g, "\n").replace(/<img[^>]*\balt="([^"]*)"[^>]*>/gi, " [图:$1] ").replace(/<img[^>]*>/gi, " [图片] ").replace(/[ \t]{2,}/g, " ").replace(/\n[ \t]+/g, "\n").replace(/[ \t]+\n/g, "\n").trim(), cl = (str) => str.replace(/^【.*?】\s*/, "").replace(/\s*（\d+\.\d+分）$/, ""), getQuestion = (type, html) => {
     let questionHtml, questionText, questionTypeId, optionHtml, tokenHtml, workType, optionText, index;
-    switch (type) {
-      case "1":
-        return workType = "zj", questionHtml = Array.from(html.querySelectorAll(".clearfix .fontLabel")), questionText = cl(removeHtml(questionHtml[0].innerHTML)), questionTypeId = html.querySelectorAll("input[name^=answertype]")[0].value, optionHtml = Array.from(html.querySelectorAll("ul")[0].querySelectorAll("li .after")), tokenHtml = html.innerHTML, optionText = [], optionHtml.forEach(function(item) {
-          optionText.push(removeHtml(item.innerHTML));
-        }), { question: questionText, options: optionText, type: questionTypeId, questionData: tokenHtml, workType };
-      case "2":
-        workType = "zy", questionHtml = Array.from(html.querySelectorAll(".mark_name")), index = questionHtml[0].innerHTML.indexOf("</span>"), questionText = cl(removeHtml(questionHtml[0].innerHTML.substring(index + 7))), questionHtml[0].getElementsByTagName("span")[0].innerHTML.replace("(", "").replace(")", "").split(",")[0], questionTypeId = html.querySelectorAll("input[name^=answertype]")[0].value, optionHtml = Array.from(html.querySelectorAll(".answer_p")), tokenHtml = html.innerHTML, optionText = [];
-        for (let i = 0; i < optionHtml.length; i++)
-          optionText.push(removeHtml(optionHtml[i].innerHTML));
-        return { question: questionText, options: optionText, type: questionTypeId, questionData: tokenHtml, workType };
-      case "3":
-        workType = "ks", questionHtml = Array.from(document.getElementsByClassName("mark_name colorDeep")), index = questionHtml[0].innerHTML.indexOf("</span>"), questionText = cl(removeHtml(questionHtml[0].innerHTML.substring(index + 7))), questionHtml[0].getElementsByTagName("span")[0].innerHTML.replace("(", "").replace(")", "").split(",")[0], questionTypeId = document.querySelectorAll("input[name^=type]")[1].value, optionHtml = Array.from(document.getElementsByClassName("answer_p")), tokenHtml = document.getElementsByClassName("mark_table")[0].innerHTML, optionText = [];
-        for (let i = 0; i < optionHtml.length; i++)
-          optionText.push(removeHtml(optionHtml[i].innerHTML));
-        return { question: questionText, options: optionText, type: questionTypeId, questionData: tokenHtml, workType };
+    try {
+      switch (type) {
+        case "1": {
+          workType = "zj";
+          questionHtml = Array.from(html.querySelectorAll(".clearfix .fontLabel"));
+          questionText = cl(removeHtml(questionHtml[0].innerHTML));
+          questionTypeId = html.querySelectorAll("input[name^=answertype]")[0].value;
+          tokenHtml = html.innerHTML;
+          // 选项文本提取：首选 li .after；新模板里没有 .after，退到 .num_option / 裸 li
+          const ul0 = html.querySelectorAll("ul")[0];
+          let optNodes = ul0 ? Array.from(ul0.querySelectorAll("li .after")) : [];
+          let optMode = "after";
+          if (!optNodes.length && ul0) { optNodes = Array.from(ul0.querySelectorAll("li .num_option, li .num_option_dx")); optMode = "num_option"; }
+          if (!optNodes.length && ul0) { optNodes = Array.from(ul0.querySelectorAll("li")); optMode = "li"; }
+          optionText = optNodes.map(function(item) {
+            if (optMode === "li") {
+              // 裸 li 会把选项序号（A. / A、）也算进去，去掉它
+              const t = removeHtml(item.innerHTML).replace(/^\s*[A-Ha-h]\s*[\.、．\)）:：]?\s*/, "").trim();
+              return t || removeHtml(item.innerHTML);
+            }
+            return removeHtml(item.innerHTML);
+          });
+          if (!optionText.length) console.warn("[取题] 未取到任何选项文本（ul 存在=" + !!ul0 + "），该题大概率会填不出来");
+          return { question: questionText, options: optionText, type: questionTypeId, questionData: tokenHtml, workType };
+        }
+        case "2":
+          workType = "zy", questionHtml = Array.from(html.querySelectorAll(".mark_name")), index = questionHtml[0].innerHTML.indexOf("</span>"), questionText = cl(removeHtml(questionHtml[0].innerHTML.substring(index + 7))), questionTypeId = html.querySelectorAll("input[name^=answertype]")[0].value, optionHtml = Array.from(html.querySelectorAll(".answer_p")), tokenHtml = html.innerHTML, optionText = [];
+          for (let i = 0; i < optionHtml.length; i++)
+            optionText.push(removeHtml(optionHtml[i].innerHTML));
+          return { question: questionText, options: optionText, type: questionTypeId, questionData: tokenHtml, workType };
+        case "3":
+          workType = "ks", questionHtml = Array.from(document.getElementsByClassName("mark_name colorDeep")), index = questionHtml[0].innerHTML.indexOf("</span>"), questionText = cl(removeHtml(questionHtml[0].innerHTML.substring(index + 7))), questionTypeId = document.querySelectorAll("input[name^=type]")[1].value, optionHtml = Array.from(document.getElementsByClassName("answer_p")), tokenHtml = document.getElementsByClassName("mark_table")[0].innerHTML, optionText = [];
+          for (let i = 0; i < optionHtml.length; i++)
+            optionText.push(removeHtml(optionHtml[i].innerHTML));
+          return { question: questionText, options: optionText, type: questionTypeId, questionData: tokenHtml, workType };
+      }
+    } catch (e) {
+      console.error("[取题失败] type=" + type, e);
+      return { question: "", options: [], type: "0", questionData: "", workType: "?", _parseError: String(e && e.message ? e.message : e) };
     }
   }, decode = (iframeWindow) => {
     var _a;
@@ -1494,33 +2221,62 @@
         array[i] = decodedData.charCodeAt(i);
       return array;
     })(fontMatch[1]), font = Typr$1.parse(fontData), table = JSON.parse(_GM_getResourceText("ttf"));
-    let text = {};
-    for (let i = 19968; i < 40870; i++) {
-      let t = Typr$1.U.codeToGlyph(font, i);
-      t && (t = Typr$1.U.glyphToPath(font, t), t = md5(JSON.stringify(t)).slice(24), text[i] = table[t]);
-    }
-    iframeWindow.document.querySelectorAll(".font-cxsecret").forEach((fontElement) => {
-      let html = fontElement.innerHTML;
-      Object.keys(text).forEach((key) => {
-        const regex = new RegExp(String.fromCharCode(key), "g");
-        html = html.replace(regex, String.fromCharCode(text[key]));
-      }), fontElement.innerHTML = html, fontElement.classList.remove("font-cxsecret");
+    // 1.2.10 性能修复（提速关键）：旧实现无条件遍历 19968..40870 共 20902 个码位，
+    //   每个都跑 codeToGlyph + glyphToPath + JSON.stringify + md5 —— 纯同步 CPU，每章重算，
+    //   实测单次数秒。而页面上真正出现的混淆字符通常只有几十个。
+    //   改为：先把 .font-cxsecret 里实际出现的码位收齐，只对这些算映射；字符级替换也不再逐字建 RegExp。
+    const els = Array.prototype.slice.call(iframeWindow.document.querySelectorAll(".font-cxsecret"));
+    if (!els.length) return;
+    const need = new Map();
+    els.forEach((el) => {
+      const s = el.textContent || "";
+      for (const ch of s) need.set(ch.codePointAt(0), ch);
+    });
+    const text = {};
+    let hit = 0;
+    need.forEach((ch, cp) => {
+      try {
+        const g = Typr$1.U.codeToGlyph(font, cp);
+        if (!g) return;
+        const p = Typr$1.U.glyphToPath(font, g);
+        const k = md5(JSON.stringify(p)).slice(24);
+        const v = table[k];
+        if (v != null) { text[cp] = v; hit++; }
+      } catch (e) {}
+    });
+    console.log("[字体解码] 页面混淆字符 " + need.size + " 个，命中映射表 " + hit + " 个（旧实现要算 20902 个）");
+    els.forEach((fontElement) => {
+      const html = fontElement.innerHTML;
+      const parts = [];
+      for (const ch of html) {
+        const cp = ch.codePointAt(0);
+        parts.push(text[cp] != null ? String.fromCharCode(text[cp]) : ch);
+      }
+      fontElement.innerHTML = parts.join("");
+      fontElement.classList.remove("font-cxsecret");
     });
   }, getAnswers = (questionData, windowz = _unsafeWindow) => {
     let server = new ServerApi(windowz);
-    // AI 模式：调用大模型获取答案
     return Promise.all([server.getAnswer(questionData)]);
   }, fillAnswer = (answer, questionData, html, iframeWindow) => {
-    answer = answer.filter((item) => item.answer.length > 0), console.log(answer);
+    const rawAll = answer || [];
+    answer = rawAll.filter((item) => item && item.answer && item.answer.length > 0), console.log(answer);
     for (let i = 0; i < answer.length; i++) {
       if ("string" == typeof answer[i].answer) {
-        if (-1 !== answer[i].answer.indexOf("付费题库") || -1 !== answer[i].answer.indexOf("暂无答案") || "略" == answer[i].answer)
+        if (-1 !== answer[i].answer.indexOf("付费题库") || -1 !== answer[i].answer.indexOf("暂无答案") || "略" == answer[i].answer) {
+          questionData._fillError = "答案被标记为「付费题库 / 暂无答案 / 略」，已跳过";
           continue;
+        }
         answer[i].answer = [answer[i].answer];
       }
       let tmp = setAnswer(answer[i].answer, questionData, html, iframeWindow);
       if (tmp)
         return tmp;
+    }
+    // 到这里说明没填上：把「为什么没填上」记在题目对象上，供 UI 如实显示
+    if (!questionData._fillError) {
+      const first = rawAll[0];
+      questionData._fillError = diagnoseFill(questionData, first ? first.answer : "");
     }
     return false;
   }, setAnswer = (answer, questionData, html, iframeWindow) => {
@@ -1531,8 +2287,6 @@
         if (matchArr.length === 0) return false;
         clearCurrent(html, iframeWindow);
         const $root = $$1(html);
-        // 选项 li 只取“像选项”的那些（含 .after / 表单控件 / .answerBg），
-        // 避免题干中无关的 li 混入导致下标错位、点错或漏点选项
         let $lis = $root.find("ul:eq(0) li").filter(function() {
           return $$1(this).find(".after, :radio, :checkbox, .answerBg").length > 0;
         });
@@ -1543,7 +2297,6 @@
         for (let i = 0; i < matchArr.length; i++) {
           const idx = matchArr[i];
           let $li = $lis.eq(idx);
-          // 优先按选项文本精确定位（最稳），文本匹配失败时退回下标定位
           const wantText = removeHtml(questionData.options[idx] || "");
           if (wantText) {
             const $byText = $lis.filter(function() {
@@ -1554,47 +2307,32 @@
           }
           const $input = $li.find(":radio, :checkbox").first();
           if ($input.length) {
-            // 已选中的直接跳过：多选题重复点击会反选，反而造成“未做完”
             if ($input.prop("checked")) continue;
             const $label = $li.find("label").first();
             if ($label.length) $label.click();
             if (!$input.prop("checked") && $li.length) $li.click();
-            // 最后兜底：直接置为选中并触发 change，保证页面“未做完”校验能通过
             if (!$input.prop("checked")) $input.prop("checked", true).trigger("change");
           } else if ($answerBg.eq(idx).length) {
             if ($answerBg.eq(idx).find(".check_answer, .check_answer_dx").length) continue;
             $answerBg.eq(idx).click();
           } else if ($li.length) {
-            // ★★ 已选中的不重复点 ★★
-            //   学习通的选项 li 是“点击即切换”（addChoice/addMultipleChoice 里都是 hasClass 判断后 add/remove），
-            //   对同一项点第二次会把答案反选成空 → 隐藏域 #answer<qid> 变空 → 提交时弹“您还有未做完的X，确认提交吗？”。
-            //   fillAnswer 在“第一条 AI 结果返回 false 时会用下一条再试”，很容易触发这次重复点击。
             if ($li.find(".check_answer, .check_answer_dx").length) continue;
             $li.click();
           }
         }
-        // ★★ 确定性写答案模型（本轮核心）★★
-        //   上面的点击是「尽力而为」：新模板（选项是 <span class="num_option choice<qid>">，没有 radio/.answerBg）
-        //   里它根本不写模型，导致答案落不进 #answer<qid>、提交时被弹「您还有未做完的」。这里直接写死模型。
         let _wrote = null;
         try { _wrote = writeChoiceModel(html, matchArr, iframeWindow.document, "1" == questionData.type); } catch (e) { console.log("[答案模型] 直写失败:", e); }
         if (_wrote) return answer;
-        // ★ 新模板判定：题内含 .choice<qid> 选项 span ⇒ 一定是新模板。
-        //   新模板里页面没有 radio/.answerBg 可点，旧式 (hasInputs ? anyChecked : true) 会因 hasInputs=false 恒返回真，
-        //   把「答案根本没写进模型」谎报成「已填入」→ 上层既看不到失败、也不标红，最后提交时才炸。
-        //   这里必须如实返回 false，交由提交前的 choiceState/refillChoices 兜底补写。
         let _newTpl = false, _inpNow = null;
         try {
           _inpNow = answerInputOf(html, iframeWindow.document);
           if (_inpNow) _newTpl = !!iframeWindow.document.querySelectorAll(".choice" + String(_inpNow.id).slice(6)).length;
         } catch (e) {}
         if (_newTpl) {
-          // 直写失败，但页面自身的点击路径可能已经把答案写进模型 → 以模型实际内容为准，避免误报失败
           try { if (_inpNow && String(_inpNow.value || "").replace(/\s+/g, "")) return answer; } catch (e) {}
           console.log("[答案模型] 新模板直写未成功，如实返回 false（等待提交前补写兜底）");
           return false;
         }
-        // 兜底（老模板 / 结构异常）：沿用原来的 DOM 判定
         const hasInputs = $root.find("ul:eq(0) :radio, :checkbox").length > 0;
         const anyChecked = $root.find("ul:eq(0) :radio, :checkbox").filter(":checked").length > 0
           || $root.find(".check_answer, .check_answer_dx").length > 0;
@@ -1611,11 +2349,9 @@
             "true" == $$1(this).find(".num_option").attr("data") ? _ans3.match(/(^|,)(True|true|正确|是|对|√|T|ri)(,|$)/) && $$1(this).click() : _ans3.match(/(^|,)(False|false|错误|否|错|×|F|wr)(,|$)/) && $$1(this).click();
           });
         } catch (e) {}
-        // ★ 确定性写模型：判断题同样只读 #answer<qid>.value，必须直接写
         let _wrote3 = null;
         try { _wrote3 = writeChoiceModel(html, _idxs3, iframeWindow.document, false); } catch (e) { console.log("[答案模型] 判断题直写失败:", e); }
         if (_wrote3) return _ans3;
-        // 新模板（题内有 .choice<qid>）下直写失败即真失败，绝不能用 hasInputs 兜底谎报成功（同 case 0/1）
         let _newTpl3 = false, _inpNow3 = null;
         try {
           _inpNow3 = answerInputOf(html, iframeWindow.document);
@@ -1649,50 +2385,70 @@
         return false;
     }
   }, matchAnswer = (answer, options) => {
-    answer = ((answer2) => {
-      if (answer2 instanceof Array) {
-        answer2 = answer2.filter(function(item) {
-          return null !== item;
-        });
-        for (let i2 = 0; i2 < answer2.length; i2++)
-          answer2[i2] = removeHtml(answer2[i2]);
-      } else
-        "string" == typeof answer2 && (answer2 = cl(answer2));
-      return answer2;
-    })(answer);
-    for (var matchArr = [], i = 0; i < answer.length; i++)
-      for (var j = 0; j < options.length; j++)
-        answer[i] == options[j] && matchArr.push(j);
-    return matchArr;
+    // 三层匹配。旧实现只做「HTML 剥离后逐字相等」，
+    // 一个全角逗号、一个多余空格、一个省略号差异就会判失败 —— 这是「答案明明有却填不进去」的主因。
+    const normMatch = (s) => String(s == null ? "" : s)
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/gi, "")
+      .replace(/[\s\u3000\u00a0]+/g, "")
+      .replace(/[，,。、;；:：""''"'（）()【】\[\]《》!！?？~～·—]/g, "")
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .toLowerCase();
+
+    const list = (answer instanceof Array ? answer : [answer])
+      .filter((x) => x != null)
+      .map((x) => removeHtml(x));
+    const opts = options || [];
+    const hit = [];
+    const push = (j) => { if (hit.indexOf(j) < 0) hit.push(j); };
+
+    // ① 逐字相等（最可靠）
+    for (let i = 0; i < list.length; i++)
+      for (let j = 0; j < opts.length; j++)
+        if (String(list[i]) === String(opts[j])) push(j);
+    if (hit.length) return hit.sort((a, b) => a - b);
+
+    // ② 归一化后相等（全半角、标点、空白差异）
+    const na = list.map(normMatch).filter((s) => s.length >= 2);
+    const no = opts.map(normMatch);
+    for (let i = 0; i < na.length; i++)
+      for (let j = 0; j < no.length; j++)
+        if (no[j] && na[i] === no[j]) push(j);
+    if (hit.length) return hit.sort((a, b) => a - b);
+
+    // ③ AI 那段话里包含了某个选项原文 → 唯一命中才采信（避免 "音调" 同时命中多个选项）
+    for (let i = 0; i < na.length; i++) {
+      const local = [];
+      for (let j = 0; j < no.length; j++) {
+        if (no[j] && no[j].length >= 4 && na[i].includes(no[j])) local.push(j);
+      }
+      if (local.length === 1) push(local[0]);
+    }
+    return hit.sort((a, b) => a - b);
   }, clearCurrent = (item, iframeWindow) => {
     $$1(item).find(".answerBg, .textDIV, .eidtDiv").each(function() {
       ($$1(this).find(".check_answer").length || $$1(this).find(".check_answer_dx").length) && $$1(this).click();
     }), $$1(item).find("textarea").each(function() {
-      iframeWindow.UE.getEditor($$1(this).attr("name")).ready(function() {
-        this.setContent("");
-      });
+      try {
+        iframeWindow.UE.getEditor($$1(this).attr("name")).ready(function() {
+          this.setContent("");
+        });
+      } catch (e) {}
     }),
-    // ★ 新模板适配 ★ 现在选项是 <span class="num_option choice<qid>" data="A">，外层没有 .answerBg/.textDIV/.eidtDiv，
-    //   上面的选择器一个都命中不到 → clearCurrent 在新模板上等于空操作，残留的旧选中会让「单选互斥 / 未做完」判定出错。
-    //   这里直接摘掉选中类，并把对应的隐藏答案域一并清空，保证每次填充都从干净状态开始。
     $$1(item).find(".num_option.check_answer, .num_option.check_answer_dx, .num_option_dx.check_answer, .num_option_dx.check_answer_dx").removeClass("check_answer check_answer_dx"),
     $$1(item).find('input[type="hidden"][id^="answer"]').each(function() {
       /^answer\d+$/.test(this.id || "") && (this.value = "", this.setAttribute("value", ""));
     }),
     $$1(item).find(":radio, :checkbox").prop("checked", false), $$1(item).find("textarea").each(function() {
-      iframeWindow.UE.getEditor($$1(this).attr("name")).ready(function() {
-        this.setContent("");
-      });
+      try {
+        iframeWindow.UE.getEditor($$1(this).attr("name")).ready(function() {
+          this.setContent("");
+        });
+      } catch (e) {}
     });
   },
-  // ★★ 定位题目对应的隐藏答案域 input#answer<qid> ★★
-  //   这是页面「提交」与「未做完」校验唯一读的对象（confirmSubmitWork → $("#form1").serialize()；toadd → $("#answer"+id).val()）。
-  //   注意 input[id^="answer"] 会同时命中 answertype<qid>，必须用 /^answer\d+$/ 精确排除。
-  //   真机结构：<div class="singleQuesId" data="qid"><div class="TiMu">…<ul>…</ul><input type="hidden" id="answer<qid>"></div></div>
   answerInputOf = (timu, doc) => {
     if (!timu) return null;
-    // 两轮扫描：先严格 /^answer\d+$/（标准形态），再放宽 /^answer\w+$/（兼容个别模板给 #answer 加后缀的变体）。
-    // 两轮都必须排除 answertype<qid>——它的 id 同样以 "answer" 开头，混进来会让写入落到错误的对象上。
     const scan = (scope) => {
       let ns = [];
       try { ns = scope.querySelectorAll('input[id^="answer"]'); } catch (e) { return null; }
@@ -1716,8 +2472,6 @@
     } catch (e) {}
     return null;
   },
-  // 由「AI 给出的答案」算出目标选项下标（相对 questionData.options / 选项 DOM 顺序）
-  //   选择类：按选项文本匹配；判断题再补一条「正确/错误」语义兜底（有些模板 data 是 true/false 而非 A/B）
   targetIndices = (type, answer, options) => {
     const arr = answer instanceof Array ? answer : [String(answer)];
     let idxs = [];
@@ -1728,27 +2482,16 @@
     }
     return idxs;
   },
-  // ★★★ 确定性写答案模型（本轮核心修复）★★★
-  //   学习通的提交链（serialize）与「未做完」校验（toadd）都只读 #answer<qid>.value；
-  //   而新模板的选项是 <span class="num_option choice<qid>" data="A">，页面上没有 radio / .answerBg，
-  //   旧实现「点 li 让页面自己写模型」在新模板上整条失效（既不写 value，也无从判断）。
-  //   所以这里直接：① 按 DOM 顺序给选项 span 打/清选中类；② 直接写 input.value = 字母串。
-  //   无论模板怎么变、li.click() 有没有生效，模型都一定写进去。
-  //   返回写入的字母串；找不到新模板结构（无 .choice<qid> span）时返回 null —— 此时**绝不触碰** input.value，
-  //   以免把旧模板（yatori/H5）里已经由点击写好、但结构不同的答案抹掉。
   writeChoiceModel = (timu, indices, doc, multi) => {
     const d = doc || (timu && timu.ownerDocument);
     const inp = answerInputOf(timu, d);
     if (!inp) { console.log("[答案模型] 直写放弃：题内未定位到 #answer<qid>"); return null; }
     const qid = String(inp.id).slice(6);
-    // 选项 span 逐级兜底定位。页面自身约定是 .choice<qid>（addChoice/addMultipleChoice 正是按它聚合 data 写 #answer），
-    // 但不同模板可能把类挂在 .num_option / .num_option_dx 上，所以一级不行就降级，尽量别放弃。
     let spans = [];
     const take = (fn) => { if (spans.length) return; try { const r = fn(); if (r && r.length) spans = r; } catch (e) {} };
     take(() => d.querySelectorAll(".choice" + qid));
     take(() => timu.querySelectorAll(".num_option, .num_option_dx"));
     take(() => timu.querySelectorAll("span[data]"));
-    // 一个都找不到 ⇒ 不是新模板 → 绝不触碰 input.value，交给原来的点击逻辑（保护 yatori/H5 老模板已写好的答案）
     if (!spans.length) { console.log("[答案模型] 直写放弃：qid=" + qid + " 未找到任何选项元素"); return null; }
     const want = {};
     (indices || []).forEach(function (i) { want[i] = true; });
@@ -1756,10 +2499,9 @@
     let value = "";
     for (let s = 0; s < spans.length; s++) {
       const sp = spans[s];
-      // 下标只认「题目内选项顺序」：spans 按 DOM 顺序返回，与 questionData.options 一致
       const on = !!want[s];
       try {
-        sp.classList.remove(singleCls); sp.classList.remove(multiCls);   // 先清后设：单选必须互斥
+        sp.classList.remove(singleCls); sp.classList.remove(multiCls);
         if (on) sp.classList.add(multi ? multiCls : singleCls);
         const li = sp.closest ? sp.closest("li") : null;
         if (li) { li.setAttribute("aria-checked", on ? "true" : "false"); li.setAttribute("aria-pressed", on ? "true" : "false"); }
@@ -1768,14 +2510,9 @@
     }
     if (!value) { console.log("[答案模型] 直写放弃：qid=" + qid + " 目标下标算不出值（indices=" + JSON.stringify(indices) + " spans=" + spans.length + "）"); return null; }
     try { inp.value = value; inp.setAttribute("value", value); } catch (e) { return null; }
-    // 回读校验：写入必须真的落到模型上，否则一律视为失败（宁可由上层重试/拒绝，也不谎报「已填入」）
     if (String(inp.value == null ? "" : inp.value) !== value) { console.log("[答案模型] 直写回读不一致：期望 " + value + " 实得 " + inp.value); return null; }
     return value;
   },
-  // ★★ 根因修复的关键一环：把 askStore 里存的「AI 结果对象数组」拍平成纯答案字符串数组 ★★
-  //   askStore 存的是 fillAnswer 的返回值 = [{form, answer:[…], num, usenum, …}]，并不是答案字符串。
-  //   旧 refillChoices 直接把它整包交给 matchAnswer → removeHtml(对象) 得 "[object Object]" → 恒不匹配 → 补写永远失败。
-  //   这里统一归一化：对象取 .answer，数组递归，最终只留非空字符串。
   flattenAnswers = (raw) => {
     const out = [];
     const walk = (v) => {
@@ -1787,7 +2524,8 @@
     };
     walk(raw);
     return out;
-  }, useAskStore = pinia$1.defineStore({ id: "ask", state: () => ({ dialogVisible: true, count: 0, submitFailed: false, questionList: [], task: { name: "执行任务中", work: { questionList: [], inx: 0 }, video: [], log: [], status: "" } }), actions: { reset() {
+  },
+  useAskStore = pinia$1.defineStore({ id: "ask", state: () => ({ dialogVisible: true, count: 0, submitFailed: false, questionList: [], task: { name: "执行任务中", work: { questionList: [], inx: 0 }, video: [], log: [], status: "" } }), actions: { reset() {
     this.task.name = "执行任务中", this.task.work = { questionList: [], inx: 0 }, this.task.video = [], this.task.status = "", this.count = 0, this.submitFailed = false;
   }, select(index) {
     this.task.work.questionList[index].selected = true, this.task.work.inx = index;
@@ -1803,31 +2541,35 @@
   }, update(index, question) {
     this.task.work.questionList[index] = question;
   }, log(msg, level = "info") {
-    this.task.log.length > 20 && this.task.log.shift(), this.task.log.push({ time: (/* @__PURE__ */ new Date()).toLocaleTimeString(), msg, type: level });
-    // 面板日志以前只进 UI，F12 控制台看不到 → 排查「为什么没提交/为什么判失败」只能靠猜。
-    // 这里同步打一份到控制台，前缀 [日志]，错误级别再加 [错误]。
-    try { console.log("[日志]" + ("error" === level ? "[错误]" : "success" === level ? "[成功]" : "") + " " + msg); } catch (e) {}
+    // 1.2.10：上限从 20 提到可配置（默认 300）—— F12 被平台禁用时，这个面板就是唯一排查窗口
+    let cap = 300;
+    try { const v = parseInt(getConfig().keepLog); if (isFinite(v)) cap = Math.min(Math.max(v, 20), 2000); } catch (e) {}
+    while (this.task.log.length >= cap) this.task.log.shift();
+    this.task.log.push({ time: (/* @__PURE__ */ new Date()).toLocaleTimeString(), msg: String(msg == null ? "" : msg), type: level });
+    try { console.log("[日志]" + ("error" === level ? "[错误]" : "success" === level ? "[成功]" : "warn" === level ? "[警告]" : "") + " " + msg); } catch (e) {}
   }, msg(msg) {
     this.task.status = msg;
-  } } }), _sfc_main = vue.defineComponent({ setup() {
-    const askstore = useAskStore(), { dialogVisible, count, questionList, task } = pinia$1.storeToRefs(askstore), askActiveName = vue.ref("first"), askActiveNames = vue.ref(["1"]), msg = vue.ref("<h3>本脚本仅用于学习交流，请24h内删除。</h3><br><p style='color:red;'>禁止用于各种非法用途，否则后果自负！</p><br><p>答案由AI大语言模型生成，准确率不保证 100%，请自行判断、评估是否使用。</p><br><p style='font-size:13px;color:#888;'>PS：觉得脚本不错的话，还请给作者点点关注，期待给大家带来更多好用的产品！<br><a href='https://v.douyin.com/f0YirlQE0sI/' target='_blank' style='color:#409eff;text-decoration:none;'>关注作者</a></p>"), formstoreObj = useformStore(), { forminput, dialogV, activeName } = pinia$1.storeToRefs(formstoreObj), ruleFormRef = vue.ref(), rules = vue.reactive({ interval: [{ required: true, message: "间隔时间不能为空" }, { type: "number", message: "间隔时间必须为数字" }, { validator: (rule, value) => value >= 1 ? Promise.resolve() : Promise.reject("间隔时间必须大于等于1") }], answerInterval: [{ required: true, message: "答题间隔不能为空" }, { type: "number", message: "答题间隔必须为数字" }, { validator: (rule, value) => value >= 1 ? Promise.resolve() : Promise.reject("答题间隔必须大于等于1") }], token: [{ validator: (rule, value) => {
-      if (value) {
-        return /^[a-zA-Z0-9]{6,}$/.test(value) ? Promise.resolve() : Promise.reject("token格式错误");
-      }
-      return Promise.resolve();
-    } }] });
+  } } });
+
+  const _sfc_main = vue.defineComponent({ setup() {
+    const askstore = useAskStore(), { dialogVisible, count, questionList, task } = pinia$1.storeToRefs(askstore), askActiveName = vue.ref("first"), askActiveNames = vue.ref(["1"]), msg = vue.ref("<h3>本脚本仅用于学习交流，请24h内删除。</h3><br><p style='color:red;'>禁止用于各种非法用途，否则后果自负！</p><br><p>答案由AI大语言模型生成，准确率不保证 100%，请自行判断、评估是否使用。</p><br><p style='font-size:13px;color:#888;'>1.2.10 更新：视频倍速可调可关；日志上限 300 条；失败原因直接显示在题目下方。<br><b>本平台禁用了 F12，排查请点页面右侧「诊断」按钮</b>，结果会写进「运行日志」标签页，再点「复制日志」导出。<br><a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant' target='_blank' style='color:#409eff;text-decoration:none;'>GitHub 仓库</a> · <a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant/blob/main/CHANGELOG.md' target='_blank' style='color:#409eff;text-decoration:none;'>更新日志</a></p>"), formstoreObj = useformStore(), { forminput, dialogV, activeName } = pinia$1.storeToRefs(formstoreObj), ruleFormRef = vue.ref(), rules = vue.reactive({
+      interval: [{ required: true, message: "间隔时间不能为空" }, { type: "number", message: "间隔时间必须为数字" }, { validator: (rule, value) => value >= 0.1 ? Promise.resolve() : Promise.reject("间隔时间必须大于等于0.1") }],
+      answerInterval: [{ required: true, message: "答题间隔不能为空" }, { type: "number", message: "答题间隔必须为数字" }, { validator: (rule, value) => value >= 0.1 ? Promise.resolve() : Promise.reject("答题间隔必须大于等于0.1") }],
+      thtoken: [{ validator: (rule, value) => { if (value && /[\s\u4e00-\u9fa5]/.test(value)) return Promise.reject("API Key 里含空格/换行/中文，请重新粘贴"); return Promise.resolve(); } }]
+    });
     return { count, dialogVisible, questionList, askActiveName, askActiveNames, task, msg, Aim: aim_default, handleClick: (e) => {
       askstore.select(e);
     }, dialogV, activeName, ruleFormRef, forminput, rules, submitForm: async (formEl) => {
       formEl && await formEl.validate((valid, fields) => {
-        valid && (formstoreObj.saveConfig(forminput.value), ElementPlus.ElNotification({ title: "Success", message: "配置保存成功,请自行刷新页面", type: "success" }), dialogV.value = false);
+        valid && (formstoreObj.saveConfig(forminput.value), ElementPlus.ElNotification({ title: "Success", message: "配置保存成功，请刷新页面（F12 输入 __cxDiag() 可自检）", type: "success", duration: 5000 }), dialogV.value = false);
       });
     }, userConfig, Setting: setting_default };
   } }), _hoisted_1 = { class: "dialog-footer" }, _hoisted_2 = { key: 0 }, _hoisted_3 = { class: "question_div" }, _hoisted_4 = { class: "question_ti" }, _hoisted_5 = { key: 0 }, _hoisted_6 = { key: 1 }, _hoisted_7 = { key: 2 }, _hoisted_8 = ["innerHTML"], _hoisted_9 = { key: 0, style: { "margin-top": "20px" } }, _hoisted_10 = { key: 1 }, _hoisted_11 = { key: 2 }, _hoisted_12 = { height: "100px" }, _hoisted_13 = ["innerHTML"];
   const Ask = _export_sfc(_sfc_main, [["render", function(_ctx, _cache, $props, $setup, $data, $options) {
     const _component_el_button = vue.resolveComponent("el-button"), _component_el_switch = vue.resolveComponent("el-switch"), _component_el_input = vue.resolveComponent("el-input"), _component_el_input_number = vue.resolveComponent("el-input-number"), _component_el_option = vue.resolveComponent("el-option"), _component_el_select = vue.resolveComponent("el-select"), _component_el_checkbox = vue.resolveComponent("el-checkbox"), _component_el_checkbox_group = vue.resolveComponent("el-checkbox-group"), _component_el_tooltip = vue.resolveComponent("el-tooltip"), _component_el_form_item = vue.resolveComponent("el-form-item"), _component_el_tab_pane = vue.resolveComponent("el-tab-pane"), _component_el_tabs = vue.resolveComponent("el-tabs"), _component_el_form = vue.resolveComponent("el-form"), _component_el_dialog = vue.resolveComponent("el-dialog"), _component_el_text = vue.resolveComponent("el-text"), _component_el_skeleton = vue.resolveComponent("el-skeleton"), _component_el_card = vue.resolveComponent("el-card"), _component_el_divider = vue.resolveComponent("el-divider"), _component_el_col = vue.resolveComponent("el-col"), _component_el_row = vue.resolveComponent("el-row"), _component_el_scrollbar = vue.resolveComponent("el-scrollbar"), _component_el_tag = vue.resolveComponent("el-tag"), _component_el_alert = vue.resolveComponent("el-alert"), _component_el_empty = vue.resolveComponent("el-empty");
-    return vue.openBlock(), vue.createElementBlock(vue.Fragment, null, [vue.createVNode(_component_el_button, { type: "danger", id: "csbutton", icon: _ctx.Setting, circle: "", onClick: _cache[0] || (_cache[0] = ($event) => { const s = _unsafeWindow._askStore; if (s) s.dialogVisible = !s.dialogVisible; else _ctx.dialogV = !_ctx.dialogV; }) }, null, 8, ["icon"]), vue.createVNode(_component_el_dialog, { modelValue: _ctx.dialogV, "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => _ctx.dialogV = $event), title: "学习通AI学习助手", width: "30%", modal: false, center: "", draggable: "" }, { footer: vue.withCtx(() => [vue.createElementVNode("span", _hoisted_1, [vue.createVNode(_component_el_button, { onClick: _cache[2] || (_cache[2] = ($event) => _ctx.dialogV = false) }, { default: vue.withCtx(() => [vue.createTextVNode("取消")]), _: 1 }), vue.createVNode(_component_el_button, { type: "primary", onClick: _cache[3] || (_cache[3] = ($event) => _ctx.submitForm(_ctx.ruleFormRef)) }, { default: vue.withCtx(() => [vue.createTextVNode("保存")]), _: 1 })])]), default: vue.withCtx(() => [vue.createVNode(_component_el_form, { ref: "ruleFormRef", rules: _ctx.rules, model: _ctx.forminput, class: "demo-ruleForm" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tabs, { class: "demo-tabs", modelValue: _ctx.activeName, "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => _ctx.activeName = $event) }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.userConfig, (item) => (vue.openBlock(), vue.createBlock(_component_el_tab_pane, { key: item.name, label: item.label, name: item.name }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item.config, (item1) => (vue.openBlock(), vue.createBlock(_component_el_form_item, { label: item1.label, prop: item1.name }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tooltip, { class: "box-item", effect: "dark", content: item1.desc || "", placement: "top" }, { default: vue.withCtx(() => ["switch" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_switch, { key: 0, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "input" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_input, { key: 1, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "number" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_input_number, { key: 2, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "select" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_select, { key: 3, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event, placeholder: "请选择" }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item1.options, (item2) => (vue.openBlock(), vue.createBlock(_component_el_option, { key: item2.value, label: item2.label, value: item2.value }, null, 8, ["label", "value"]))), 128))]), _: 2 }, 1032, ["modelValue", "onUpdate:modelValue"])) : "checkbox" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_checkbox_group, { key: 4, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item1.options, (item2) => (vue.openBlock(), vue.createBlock(_component_el_checkbox, { key: item2.value, label: item2.value, name: item2.value }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(item2.label), 1)]), _: 2 }, 1032, ["label", "name"]))), 128))]), _: 2 }, 1032, ["modelValue", "onUpdate:modelValue"])) : vue.createCommentVNode("", true)]), _: 2 }, 1032, ["content"])]), _: 2 }, 1032, ["label", "prop"]))), 256))]), _: 2 }, 1032, ["label", "name"]))), 128))]), _: 1 }, 8, ["modelValue"])]), _: 1 }, 8, ["rules", "model"])]), _: 1 }, 8, ["modelValue"]), (vue.openBlock(), vue.createBlock(vue.Teleport, { to: "body" }, [vue.createVNode(_component_el_button, { id: "zeokdjg", type: "success", plain: "", round: "", icon: _ctx.Aim, onClick: _cache[5] || (_cache[5] = ($event) => _ctx.dialogVisible = !_ctx.dialogVisible) }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString("执行任务中" == _ctx.task.name ? "等待任务加载" : "正在完成:" + _ctx.task.name), 1)]), _: 1 }, 8, ["icon"]), vue.createVNode(_component_el_dialog, { modelValue: _ctx.dialogVisible, "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => _ctx.dialogVisible = $event), width: "400px", title: "学习通AI学习助手", modal: false, "append-to-body": false, "lock-scroll": false, center: "", draggable: "" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_button, { style: { "margin-bottom": "20px" }, type: "primary", onClick: _cache[6] || (_cache[6] = ($event) => _ctx.dialogV = !_ctx.dialogV), plain: "" }, { default: vue.withCtx(() => [vue.createTextVNode("打开配置")]), _: 1 }), vue.createVNode(_component_el_text, { class: "mx-1", size: "large", type: "danger" }, { default: vue.withCtx(() => [vue.createTextVNode("")]), _: 1 }), vue.createVNode(_component_el_tabs, { modelValue: _ctx.askActiveName, "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => _ctx.askActiveName = $event), class: "demo-tabs" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tab_pane, { label: "运行框", name: "first" }, { default: vue.withCtx(() => [_ctx.task.work.questionList.length > 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_2, [vue.createElementVNode("div", _hoisted_3, [vue.createVNode(_component_el_card, { shadow: "hover" }, { default: vue.withCtx(() => [vue.createElementVNode("h1", _hoisted_4, [vue.createVNode(_component_el_text, { size: "large", truncated: "" }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(_ctx.task.work.inx + 1 + "." + _ctx.task.work.questionList[_ctx.task.work.inx].question), 1)]), _: 1 })]), _ctx.task.work.questionList[_ctx.task.work.inx].answer ? (vue.openBlock(), vue.createElementBlock("p", _hoisted_6, [vue.createElementVNode("p", null, [vue.createElementVNode("pre", null, vue.toDisplayString(_ctx.task.work.questionList[_ctx.task.work.inx].answer), 1)])])) : (vue.openBlock(), vue.createElementBlock("p", _hoisted_5, [vue.createVNode(_component_el_skeleton, { rows: 3, animated: "" })]))]), _: 1 })]), "考试" != _ctx.task.name ? (vue.openBlock(), vue.createBlock(_component_el_divider, { key: 0 }, { default: vue.withCtx(() => [vue.createTextVNode(" 题号 ")]), _: 1 })) : vue.createCommentVNode("", true), "考试" != _ctx.task.name ? (vue.openBlock(), vue.createBlock(_component_el_scrollbar, { key: 1, height: "100px" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_row, null, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.task.work.questionList, (item, index) => (vue.openBlock(), vue.createBlock(_component_el_col, { span: 4, key: index }, { default: vue.withCtx(() => [vue.createVNode(_component_el_button, { type: item.status || "info", plain: "", class: "question_btn", onClick: ($event) => _ctx.handleClick(index) }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(index + 1), 1)]), _: 2 }, 1032, ["type", "onClick"])]), _: 2 }, 1024))), 128))]), _: 1 })]), _: 1 })) : vue.createCommentVNode("", true), _ctx.task.work.questionList[_ctx.task.work.inx].allAnswer ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_7, [vue.createVNode(_component_el_divider, null, { default: vue.withCtx(() => [vue.createTextVNode(" 接口返回 ")]), _: 1 }), vue.createVNode(_component_el_tabs, { "tab-position": "left", class: "demo-tabs" }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.task.work.questionList[_ctx.task.work.inx].allAnswer, (item, index) => (vue.openBlock(), vue.createBlock(_component_el_tab_pane, { label: item.form }, { default: vue.withCtx(() => [vue.createElementVNode("div", null, [vue.createElementVNode("div", { innerHTML: (item.answer || "暂无答案") + "<br><p style = 'color:red;'></p>" }, null, 8, _hoisted_8), null != item.num ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_9, [vue.createElementVNode("div", null, [vue.createVNode(_component_el_tag, { class: "ml-2", type: "success" }, { default: vue.withCtx(() => [vue.createTextVNode("输出Token:" + vue.toDisplayString(item.usenum), 1)]), _: 2 }, 1024)]), vue.createElementVNode("div", null, [vue.createVNode(_component_el_tag, { class: "ml-2", type: "info" }, { default: vue.withCtx(() => [vue.createTextVNode("输入Token:" + vue.toDisplayString(item.num), 1)]), _: 2 }, 1024)])])) : vue.createCommentVNode("", true)])]), _: 2 }, 1032, ["label"]))), 256))]), _: 1 })])) : vue.createCommentVNode("", true)])) : _ctx.task.video.status ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_10, [vue.createVNode(_component_el_alert, { title: "倍速有风险，挂科两行泪", type: "error", center: "", "show-icon": "" }), vue.createVNode(_component_el_text, { class: "mx-1", size: "large", type: "danger" }, { default: vue.withCtx(() => [vue.createTextVNode(" 正在完成视频任务 ")]), _: 1 })])) : (vue.openBlock(), vue.createElementBlock("div", _hoisted_11, [vue.createElementVNode("div", _hoisted_12, [vue.createVNode(_component_el_empty, { description: _ctx.task.name }, null, 8, ["description"])])]))]), _: 1 }), vue.createVNode(_component_el_tab_pane, { label: "运行日志", name: "second" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_scrollbar, { height: "200px" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_row, null, { default: vue.withCtx(() => [vue.createVNode(_component_el_col, { span: 24 }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.task.log, (item, index) => (vue.openBlock(), vue.createElementBlock("p", { key: index, class: "cx_log" }, [vue.createVNode(_component_el_text, { size: "small", type: "info", class: "mx-1" }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(item.time), 1)]), _: 2 }, 1024), vue.createVNode(_component_el_text, { class: "mx-1", type: "info" == item.type ? "" : item.type }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(" " + item.msg), 1)]), _: 2 }, 1032, ["type"])]))), 128))]), _: 1 })]), _: 1 })]), _: 1 })]), _: 1 }), vue.createVNode(_component_el_tab_pane, { label: "声明", name: "msg" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_card, { shadow: "hover" }, { default: vue.withCtx(() => [vue.createElementVNode("div", { innerHTML: _ctx.msg }, null, 8, _hoisted_13)]), _: 1 })]), _: 1 })]), _: 1 }, 8, ["modelValue"]), vue.createElementVNode("p", null, [_ctx.task.status ? (vue.openBlock(), vue.createBlock(_component_el_tag, { key: 0 }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(_ctx.task.status), 1)]), _: 1 })) : vue.createCommentVNode("", true)])]), _: 1 }, 8, ["modelValue"])]))], 64);
+    return vue.openBlock(), vue.createElementBlock(vue.Fragment, null, [vue.createVNode(_component_el_button, { type: "danger", id: "csbutton", icon: _ctx.Setting, circle: "", onClick: _cache[0] || (_cache[0] = ($event) => { const s = _unsafeWindow._askStore; if (s) s.dialogVisible = !s.dialogVisible; else _ctx.dialogV = !_ctx.dialogV; }) }, null, 8, ["icon"]), vue.createVNode(_component_el_dialog, { modelValue: _ctx.dialogV, "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => _ctx.dialogV = $event), title: "学习通AI学习助手", width: "30%", modal: false, center: "", draggable: "" }, { footer: vue.withCtx(() => [vue.createElementVNode("span", _hoisted_1, [vue.createVNode(_component_el_button, { onClick: _cache[2] || (_cache[2] = ($event) => _ctx.dialogV = false) }, { default: vue.withCtx(() => [vue.createTextVNode("取消")]), _: 1 }), vue.createVNode(_component_el_button, { type: "primary", onClick: _cache[3] || (_cache[3] = ($event) => _ctx.submitForm(_ctx.ruleFormRef)) }, { default: vue.withCtx(() => [vue.createTextVNode("保存")]), _: 1 })])]), default: vue.withCtx(() => [vue.createVNode(_component_el_form, { ref: "ruleFormRef", rules: _ctx.rules, model: _ctx.forminput, class: "demo-ruleForm" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tabs, { class: "demo-tabs", modelValue: _ctx.activeName, "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => _ctx.activeName = $event) }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.userConfig, (item) => (vue.openBlock(), vue.createBlock(_component_el_tab_pane, { key: item.name, label: item.label, name: item.name }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item.config, (item1) => (vue.openBlock(), vue.createBlock(_component_el_form_item, { label: item1.label, prop: item1.name }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tooltip, { class: "box-item", effect: "dark", content: item1.desc || "", placement: "top" }, { default: vue.withCtx(() => ["switch" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_switch, { key: 0, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "input" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_input, { key: 1, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "number" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_input_number, { key: 2, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, null, 8, ["modelValue", "onUpdate:modelValue"])) : "select" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_select, { key: 3, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event, placeholder: "请选择" }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item1.options, (item2) => (vue.openBlock(), vue.createBlock(_component_el_option, { key: item2.value, label: item2.label, value: item2.value }, null, 8, ["label", "value"]))), 128))]), _: 2 }, 1032, ["modelValue", "onUpdate:modelValue"])) : "checkbox" === item1.type ? (vue.openBlock(), vue.createBlock(_component_el_checkbox_group, { key: 4, modelValue: _ctx.forminput[item1.name], "onUpdate:modelValue": ($event) => _ctx.forminput[item1.name] = $event }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(item1.options, (item2) => (vue.openBlock(), vue.createBlock(_component_el_checkbox, { key: 2, label: item2.value, name: item2.value }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(item2.label), 1)]), _: 2 }, 1032, ["label", "name"]))), 128))]), _: 2 }, 1032, ["modelValue", "onUpdate:modelValue"])) : vue.createCommentVNode("", true)]), _: 2 }, 1032, ["content"])]), _: 2 }, 1032, ["label", "prop"]))), 256))]), _: 2 }, 1032, ["label", "name"]))), 128))]), _: 1 }, 8, ["modelValue"])]), _: 1 }, 8, ["rules", "model"])]), _: 1 }, 8, ["modelValue"]), (vue.openBlock(), vue.createBlock(vue.Teleport, { to: "body" }, [vue.createVNode(_component_el_button, { id: "zeokdjg", type: "success", plain: "", round: "", icon: _ctx.Aim, onClick: _cache[5] || (_cache[5] = ($event) => _ctx.dialogVisible = !_ctx.dialogVisible) }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString("执行任务中" == _ctx.task.name ? "等待任务加载" : "正在完成:" + _ctx.task.name), 1)]), _: 1 }, 8, ["icon"]), vue.createVNode(_component_el_dialog, { modelValue: _ctx.dialogVisible, "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => _ctx.dialogVisible = $event), width: "400px", title: "学习通AI学习助手", modal: false, "append-to-body": false, "lock-scroll": false, center: "", draggable: "" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_button, { style: { "margin-bottom": "20px" }, type: "primary", onClick: _cache[6] || (_cache[6] = ($event) => _ctx.dialogV = !_ctx.dialogV), plain: "" }, { default: vue.withCtx(() => [vue.createTextVNode("打开配置")]), _: 1 }), vue.createVNode(_component_el_text, { class: "mx-1", size: "large", type: "danger" }, { default: vue.withCtx(() => [vue.createTextVNode("")]), _: 1 }), vue.createVNode(_component_el_tabs, { modelValue: _ctx.askActiveName, "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => _ctx.askActiveName = $event), class: "demo-tabs" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_tab_pane, { label: "运行框", name: "first" }, { default: vue.withCtx(() => [_ctx.task.work.questionList.length > 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_2, [vue.createElementVNode("div", _hoisted_3, [vue.createVNode(_component_el_card, { shadow: "hover" }, { default: vue.withCtx(() => [vue.createElementVNode("h1", _hoisted_4, [vue.createVNode(_component_el_text, { size: "large", truncated: "" }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(_ctx.task.work.inx + 1 + "." + _ctx.task.work.questionList[_ctx.task.work.inx].question), 1)]), _: 1 })]), _ctx.task.work.questionList[_ctx.task.work.inx].answer ? (vue.openBlock(), vue.createElementBlock("p", _hoisted_6, [vue.createElementVNode("p", null, [vue.createElementVNode("pre", null, vue.toDisplayString(_ctx.task.work.questionList[_ctx.task.work.inx].answer), 1)])])) : (vue.openBlock(), vue.createElementBlock("p", _hoisted_5, [vue.createVNode(_component_el_skeleton, { rows: 3, animated: "" })]))]), _: 1 })]), "考试" != _ctx.task.name ? (vue.openBlock(), vue.createBlock(_component_el_divider, { key: 0 }, { default: vue.withCtx(() => [vue.createTextVNode(" 题号 ")]), _: 1 })) : vue.createCommentVNode("", true), "考试" != _ctx.task.name ? (vue.openBlock(), vue.createBlock(_component_el_scrollbar, { key: 1, height: "100px" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_row, null, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.task.work.questionList, (item, index) => (vue.openBlock(), vue.createBlock(_component_el_col, { span: 4, key: index }, { default: vue.withCtx(() => [vue.createVNode(_component_el_button, { type: item.status || "info", plain: "", class: "question_btn", onClick: ($event) => _ctx.handleClick(index) }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(index + 1), 1)]), _: 2 }, 1032, ["type", "onClick"])]), _: 2 }, 1024))), 128))]), _: 1 })]), _: 1 })) : vue.createCommentVNode("", true), _ctx.task.work.questionList[_ctx.task.work.inx].allAnswer ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_7, [vue.createVNode(_component_el_divider, null, { default: vue.withCtx(() => [vue.createTextVNode(" 接口返回 ")]), _: 1 }), vue.createVNode(_component_el_tabs, { "tab-position": "left", class: "demo-tabs" }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.task.work.questionList[_ctx.task.work.inx].allAnswer, (item, index) => (vue.openBlock(), vue.createBlock(_component_el_tab_pane, { label: item.form }, { default: vue.withCtx(() => [vue.createElementVNode("div", null, [vue.createElementVNode("div", { innerHTML: (item.answer || "暂无答案") + "<br><p style = 'color:red;'>" + (item.error ? "【失败原因】" + item.error : "") + "</p>" }, null, 8, _hoisted_8), null != item.usenum ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_9, [vue.createElementVNode("div", null, [vue.createVNode(_component_el_tag, { class: "ml-2", type: "success" }, { default: vue.withCtx(() => [vue.createTextVNode("输出Token:" + vue.toDisplayString(item.usenum), 1)]), _: 2 }, 1024)]), vue.createElementVNode("div", null, [vue.createVNode(_component_el_tag, { class: "ml-2", type: "info" }, { default: vue.withCtx(() => [vue.createTextVNode("输入Token:" + vue.toDisplayString(item.num), 1)]), _: 2 }, 1024)])])) : vue.createCommentVNode("", true)])]), _: 2 }, 1032, ["label"]))), 256))]), _: 1 })])) : vue.createCommentVNode("", true)])) : _ctx.task.video.status ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_10, [vue.createVNode(_component_el_alert, { title: "倍速有风险，挂科两行泪", type: "error", center: "", "show-icon": "" }), vue.createVNode(_component_el_text, { class: "mx-1", size: "large", type: "danger" }, { default: vue.withCtx(() => [vue.createTextVNode(" 正在完成视频任务 ")]), _: 1 })])) : (vue.openBlock(), vue.createElementBlock("div", _hoisted_11, [vue.createElementVNode("div", _hoisted_12, [vue.createVNode(_component_el_empty, { description: _ctx.task.name }, null, 8, ["description"])])]))]), _: 1 }), vue.createVNode(_component_el_tab_pane, { label: "运行日志", name: "second" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_scrollbar, { height: "200px" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_row, null, { default: vue.withCtx(() => [vue.createVNode(_component_el_col, { span: 24 }, { default: vue.withCtx(() => [(vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(_ctx.task.log, (item, index) => (vue.openBlock(), vue.createElementBlock("p", { key: index, class: "cx_log" }, [vue.createVNode(_component_el_text, { size: "small", type: "info", class: "mx-1" }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(item.time), 1)]), _: 2 }, 1024), vue.createVNode(_component_el_text, { class: "mx-1", type: "info" == item.type ? "" : item.type }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(" " + item.msg), 1)]), _: 2 }, 1032, ["type"])]))), 128))]), _: 1 })]), _: 1 })]), _: 1 })]), _: 1 }), vue.createVNode(_component_el_tab_pane, { label: "声明", name: "msg" }, { default: vue.withCtx(() => [vue.createVNode(_component_el_card, { shadow: "hover" }, { default: vue.withCtx(() => [vue.createElementVNode("div", { innerHTML: _ctx.msg }, null, 8, _hoisted_13)]), _: 1 })]), _: 1 })]), _: 1 }, 8, ["modelValue"]), vue.createElementVNode("p", null, [_ctx.task.status ? (vue.openBlock(), vue.createBlock(_component_el_tag, { key: 0 }, { default: vue.withCtx(() => [vue.createTextVNode(vue.toDisplayString(_ctx.task.status), 1)]), _: 1 })) : vue.createCommentVNode("", true)])]), _: 1 }, 8, ["modelValue"])]))], 64);
   }], ["__scopeId", "data-v-c3c6b09f"]]);
+
   class Cx {
     constructor() {
       __publicField(this, "app");
@@ -1835,10 +2577,17 @@
       __publicField(this, "ServerApi");
       __publicField(this, "defaultConfig");
       this.app = vue.createApp(Ask).use(ElementPlus).use(pinia$1.createPinia()), this.askStore = useAskStore(), _unsafeWindow._askStore = this.askStore, this.ServerApi = new ServerApi(), this.defaultConfig = getConfig(), this.app.mount((() => {
-        try { var td = _unsafeWindow.top.document; } catch(e) { td = document; }
+        try { var td = _unsafeWindow.top.document; } catch (e) { td = document; }
         const div = td.createElement("div");
         return div.id = "xxxxzx", td.getElementById(div.id) || td.body.append(div), div;
       })());
+      // 页面内诊断按钮组：诊断 / 复制日志 / 清缓存 / 日志面板（不依赖 F12）
+      try { injectDiagUI(this.askStore); } catch (e) { console.log("[诊断UI] 挂载失败:", e); }
+    }
+    // 1.2.10：答题间隔实时读取配置（改完保存即生效，不用刷新页面重跑整章）
+    get answerSpeed() {
+      const v = parseFloat(getConfig().answerInterval);
+      return isFinite(v) && v >= 0 ? v : 1;
     }
     async audio(iframeWindow, ctx) {
       const aborted = ctx && "function" == typeof ctx.aborted ? ctx.aborted : function() { return false; };
@@ -1863,24 +2612,101 @@
     async video(iframeWindow, ctx) {
       const aborted = ctx && "function" == typeof ctx.aborted ? ctx.aborted : function() { return false; };
       this.askStore.reset(), this.askStore.task.name = "视频", this.askStore.task.video.status = 1;
-      await waitElementLoaded(iframeWindow, "#video_html5_api"), console.log("视频加载完成");
-      if (aborted()) return void console.log("[中断] 视频任务已中止（章节已切换）");
-      const player = iframeWindow.videojs("video_html5_api"), playerButton = iframeWindow.document.querySelector(".vjs-big-play-button");
-      player.muted(true), player.playbackRate(16), player.play(), await new Promise((resolve) => {
+      await waitElementLoaded(iframeWindow, "#video_html5_api");
+      if (aborted()) { this.askStore.log("视频任务已中止（章节已切换）", "info"); return; }
+
+      const player = iframeWindow.videojs("video_html5_api");
+      const playerButton = iframeWindow.document.querySelector(".vjs-big-play-button");
+      if (!player) { this.askStore.log("未取得 videojs 实例，本视频跳过", "error"); return; }
+
+      // ── 倍速：可开关、可调（1.2.10 新增）──────────────────────────
+      const cfg = getConfig();
+      const rateOn = cfg.videoRateOn !== false;
+      const raw = parseFloat(cfg.videoRate);
+      const wantRate = rateOn ? (isFinite(raw) && raw > 0 ? Math.min(Math.max(raw, 0.5), 16) : 1) : 1;
+
+      try { player.muted(cfg.videoMute !== false); } catch (e) {}
+      try { player.playbackRate(wantRate); } catch (e) { this.askStore.log("设置倍速异常：" + (e && e.message ? e.message : e), "error"); }
+
+      // 读回真实生效值：很多播放器把倍速夹到上限，配置写 16 实际只有 2~4
+      let realRate = wantRate;
+      try { const r = player.playbackRate(); if (isFinite(r) && r > 0) realRate = r; } catch (e) {}
+
+      const dur = (() => { try { const d = player.duration(); return isFinite(d) ? d : 0; } catch (e) { return 0; } })();
+      this.askStore.log(
+        "视频开始：配置 " + wantRate.toFixed(2) + "x" + (rateOn ? "" : "（倍速开关已关，按原速）") +
+        "，实际生效 " + realRate.toFixed(2) + "x" +
+        (Math.abs(realRate - wantRate) > 0.05 ? "（播放器把倍速夹到了 " + realRate.toFixed(2) + "）" : "") +
+        (dur ? "，时长 " + Math.round(dur) + " 秒" : ""),
+        Math.abs(realRate - wantRate) > 0.05 ? "info" : "success"
+      );
+
+      try { player.play(); } catch (e) { this.askStore.log("play() 异常：" + (e && e.message ? e.message : e), "error"); }
+
+      await new Promise((resolve) => {
+        const t0 = Date.now();
+        let lastTick = 0;
         const intervalId = setInterval(() => {
-          if (aborted()) { clearInterval(intervalId); try { player.pause(); } catch (e) {} return void console.log("[中断] 视频任务已中止"), resolve(); }
-          "isUnFinishJob" in iframeWindow && iframeWindow.isUnFinishJob() ? player.paused() && (playerButton == null ? void 0 : playerButton.click()) : (clearInterval(intervalId), resolve());
-        }, 1e3), pauseBase = player.pause;
+          if (aborted()) {
+            clearInterval(intervalId);
+            try { player.pause(); } catch (e) {}
+            this.askStore.log("视频任务已中止（章节已切换）", "info");
+            return void resolve();
+          }
+          // 倍速保持：播放器加载 metadata / seek 后常把倍速重置回 1，这里持续校正
+          if (rateOn) {
+            try { if (Math.abs(player.playbackRate() - wantRate) > 0.01) player.playbackRate(wantRate); } catch (e) {}
+          }
+          // 进度心跳：每 10 秒一条，方便在面板里看卡在哪
+          const now = Date.now();
+          if (now - lastTick > 10000) {
+            lastTick = now;
+            try {
+              const cur = player.currentTime(), total = player.duration();
+              if (isFinite(total) && total > 0) {
+                this.askStore.log(
+                  "视频进度 " + Math.round(cur) + "/" + Math.round(total) + " 秒（" +
+                  Math.floor(cur / total * 100) + "%）" + (player.paused() ? " ⏸已暂停" : " ▶播放中") +
+                  " " + player.playbackRate().toFixed(2) + "x", "info");
+              }
+            } catch (e) {}
+          }
+          const unFinish = ("isUnFinishJob" in iframeWindow) ? iframeWindow.isUnFinishJob() : true;
+          if (!unFinish) { clearInterval(intervalId); this.askStore.log("任务点已标记完成", "success"); resolve(); return; }
+          if (player.paused()) {
+            try { if (playerButton) playerButton.click(); else player.play(); } catch (e) {}
+          }
+        }, 1000);
+
+        const self = this;
+        const pauseBase = player.pause;
         player.pause = function() {
-          player.currentTime() >= player.duration() && (console.log("视频播放完成"), player.pause = pauseBase, resolve());
-        }, player.on("ended", () => {
-          console.log("视频播放完成1"), player.pause = pauseBase, player.pause(), clearInterval(intervalId), resolve();
+          try {
+            if (player.currentTime() >= player.duration() - 0.5) {
+              player.pause = pauseBase;
+              clearInterval(intervalId);
+              resolve();
+              try { self.askStore.log("视频播放完成", "success"); } catch (e) {}
+            }
+          } catch (e) {}
+        };
+        player.on("ended", () => {
+          try { player.pause = pauseBase; } catch (e) {}
+          clearInterval(intervalId);
+          this.askStore.log("视频播放完成（ended 事件）", "success");
+          resolve();
         });
-      }), console.log("任务点完成");
+        // 兜底：长时间无任何进展就在面板里报一句，避免「静默挂着」
+        setTimeout(() => {
+          if (!aborted() && ("isUnFinishJob" in iframeWindow) && iframeWindow.isUnFinishJob()) {
+            this.askStore.log("视频已跑 " + Math.round((Date.now() - t0) / 1000) + " 秒仍未完成，继续等待…", "info");
+          }
+        }, 120000);
+      });
     }
     work(iframeWindow, ctx) {
       return new Promise(async (resolve) => {
-        // ctx.aborted() 为真表示用户已手动切章，本任务必须立刻让出，不能继续往已失效的 DOM 里填答案
+        CX_LAST_FRAME = iframeWindow;   // 供「抓现场」使用
         const aborted = ctx && "function" == typeof ctx.aborted ? ctx.aborted : function() { return false; };
         const stopIfAborted = (msg) => {
           if (!aborted()) return false;
@@ -1899,39 +2725,41 @@
         this.askStore.reset(), this.askStore.count = ques.length, this.askStore.task.name = "章节测验";
         for (let i = 0; i < ques.length; i++) {
           if (stopIfAborted("检测到已手动切换章节，中止本章答题")) return void resolve();
-          await sleep(this.defaultConfig.answerInterval), this.askStore.insert(ques[i]), this.askStore.task.work.inx = i;
-          // 修复：原脚本只读 window._aiQIdx 从不写入，导致每道题的日志都打印「第 1 题」
-          window._aiQIdx = i;
+          await sleep(this.answerSpeed), this.askStore.insert(ques[i]), this.askStore.task.work.inx = i;
+          _unsafeWindow._aiQIdx = i;
           let data = await getAnswers(ques[i], iframeWindow);
           if (stopIfAborted("检测到已手动切换章节，中止本章答题")) return void resolve();
           this.askStore.get(i).allAnswer = data;
-          let aiHasAnswer = data.some(function(d) { var a = d.answer; return a && (typeof a === "string" ? a.length > 0 : a.length > 0); });
+          if (data && data[0] && data[0].parseNote) this.askStore.log("第" + (i + 1) + "题 " + data[0].parseNote, "info");
+          let aiHasAnswer = data.some(function(d) { var a = d && d.answer; return a && (typeof a === "string" ? a.length > 0 : a.length > 0); });
           aiHasAnswer && aiAnswered++;
           let tmp = fillAnswer(data, ques[i], Timu[i], iframeWindow);
-          tmp ? (this.askStore.get(i).status = "primary", this.askStore.get(i).answer = tmp, succ++) : (this.askStore.get(i).status = "danger", this.askStore.get(i).answer = "暂无答案"), this.askStore.get(i).dom = Timu[i];
+          if (tmp) {
+            this.askStore.get(i).status = "primary";
+            this.askStore.get(i).answer = tmp;
+            succ++;
+          } else {
+            const e = (data && data[0] && data[0].error) ||
+              (ques[i] && (ques[i]._fillError || (ques[i]._parseError ? "题目解析失败：" + ques[i]._parseError : ""))) ||
+              "AI 未返回可用的答案";
+            this.askStore.get(i).status = "danger";
+            this.askStore.get(i).answer = "暂无答案\n\n【失败原因】" + e;
+            this.askStore.log("第" + (i + 1) + "题失败：" + e, "error");
+          }
+          this.askStore.get(i).dom = Timu[i];
         }
         if (stopIfAborted("检测到已手动切换章节，跳过提交")) return void resolve();
-        // ★★ 让答案真正写进“页面自己的答案模型”，并在提交前后反复校验 ★★
-        // 学习通的校验/提交读的是隐藏域 #answer<qid>，由选项 li 的 onclick=addChoice/addMultipleChoice 写入。
-        // 页面提交失败时会执行 location.reload()（见 realwork.html 的 confirmSubmitWork），
-        // DOM 勾选与 #answer 隐藏域会被一起清空 → 若不重填就直接再提交，交上去的是**空白卷**。
-        // 所以这里不只在填充后校验一次，而是把「状态查询 / 按存好的答案重填」做成可复用函数，交给提交环节反复调用。
-        const isChoiceType = (t) => { t = String(t); return t === "0" || t === "1" || t === "3"; };   // 单选/多选/判断：#answer 由点选即时写入
+        const isChoiceType = (t) => { t = String(t); return t === "0" || t === "1" || t === "3"; };
         const qidOfTimu = (timu, doc) => {
           if (!timu) return null;
-          // ① 最稳：题内容器里的隐藏答案域 input#answer<qid> —— 它才是页面提交/校验真正读的对象，
-          //    用它反推 qid 可以彻底摆脱「判断题 li 上没有 qid / 结构变体」导致的“无法定位”
           try { const inp = answerInputOf(timu, doc || iframeWindow.document); if (inp) { const q = String(inp.id).slice(6); if (q) return q; } } catch (e) {}
-          // ② 选项 li 上的 qid（li[qid="..." onclick="addChoice(this)"）
           try { const el = timu.querySelector("[qid]"); if (el) { const q = el.getAttribute("qid"); if (q) return q; } } catch (e) {}
-          // ③ 外层 .singleQuesId 的 data 属性
           try {
             let n = timu;
             while (n && n !== doc) { if (n.classList && n.classList.contains("singleQuesId")) return n.getAttribute("data"); n = n.parentElement; }
           } catch (e) {}
           return null;
         };
-        // 选择题答案模型状态。每次都重新取 DOM —— 页面重载后旧节点会失效，缓存住的 NodeList 会给出错误结论。
         const choiceState = () => {
           const doc = iframeWindow.document;
           let Ti = [];
@@ -1941,7 +2769,7 @@
           for (let i = 0; i < ques.length; i++) {
             if (!isChoiceType(ques[i].type)) continue;
             const qid = qidOfTimu(Ti[i], doc);
-            if (!qid) { unknown++; continue; }                       // 定位不到就当“无法判定”，不误报
+            if (!qid) { unknown++; continue; }
             let inp = null;
             try { inp = doc.getElementById("answer" + qid); } catch (e) {}
             if (!inp) { unknown++; continue; }
@@ -1950,7 +2778,6 @@
           }
           return { total: total, unknown: unknown, missing: missing };
         };
-        // 把缺失的选择题按我们已存的答案重新点选回去（已选中的一律跳过，绝不反选）
         const refillChoices = () => {
           const doc = iframeWindow.document;
           let Ti = [];
@@ -1959,12 +2786,6 @@
           for (let n = 0; n < st.missing.length; n++) {
             const idx = st.missing[n], timu = Ti[idx];
             if (!timu) continue;
-            // ★★ 根因修复（本轮核心，勿再退回）★★
-            //   askStore 里存的是 fillAnswer 的返回值 —— 那是 **AI 结果对象数组** [{form, answer:[…], …}]，
-            //   并不是答案字符串。旧实现把它整包丢给 targetIndices → removeHtml(对象) 得 "[object Object]"
-            //   → matchAnswer 恒空 → idxs 恒空 → continue ⇒ **补写永远不可能成功**。
-            //   于是「只要有一题没写进 #answer<qid>，就必然一路走到『拒绝提交空白答案』」——这就是用户症状的直接根因。
-            //   这里改为：优先取 allAnswer（AI 原始结果，无论 fill 成功与否都存了），并**递归拍平**成纯答案字符串数组。
             const rec = this.askStore.get(idx) || {};
             const raw = rec.allAnswer != null ? rec.allAnswer : rec.answer;
             const arr = flattenAnswers(raw);
@@ -1972,20 +2793,17 @@
             const multi = "1" === String(ques[idx].type);
             const idxs = targetIndices(ques[idx].type, arr, ques[idx].options || []);
             if (!idxs.length) continue;
-            // ★ 确定性写模型（本轮核心）：不再依赖 li.click() —— 新模板里它根本不写 #answer<qid>。
-            //   这一步就是「页面刷新清空答案后能不能补回来」的关键。
             let wrote = null;
             try { wrote = writeChoiceModel(timu, idxs, doc, multi); } catch (e) { console.log("[答案模型] 重填直写失败:", e); }
-            if (wrote) { console.log("[答案模型] 补写第 " + (idx + 1) + " 题成功 → " + wrote + "（第 " + (n + 1) + " 个缺失）"); continue; }
+            if (wrote) { console.log("[答案模型] 补写第 " + (idx + 1) + " 题成功 → " + wrote); continue; }
             console.log("[答案模型] 补写第 " + (idx + 1) + " 题仍失败（idxs=" + JSON.stringify(idxs) + "），转点击兜底");
-            // 兜底（老模板 / 结构异常）：按选项文本点击
             const qid = qidOfTimu(timu, doc);
             if (!qid) continue;
             let lis = [];
             try { const ns = doc.querySelectorAll("li[qid='" + qid + "']"); for (let q = 0; q < ns.length; q++) lis.push(ns[q]); } catch (e) {}
             for (let q = 0; q < lis.length; q++) {
               const li = lis[q];
-              if (li.querySelector(".check_answer, .check_answer_dx")) continue;   // 已选中的不要点，多选会反选
+              if (li.querySelector(".check_answer, .check_answer_dx")) continue;
               const after = li.querySelector(".after");
               const liTxt = removeHtml((after ? after.innerHTML : li.innerHTML) || "").trim();
               let letter = null;
@@ -2004,22 +2822,18 @@
             this.askStore.log("页面答案模型校验：有 " + st0.missing.length + " 题未写入页面（第 " + st0.missing.map(function(o) { return o + 1; }).join("、") + " 题），正在补写…", "info");
             refillChoices();
             const st1 = choiceState();
-            if (st1.missing.length) this.askStore.log("补写后仍有 " + st1.missing.length + " 题为空（第 " + st1.missing.map(function(o) { return o + 1; }).join("、") + " 题），提交环节会再次补写；仍补不上则改为「临时保存」暂存（绝不提交空白卷）", "error");
+            if (st1.missing.length) this.askStore.log("补写后仍有 " + st1.missing.length + " 题为空，提交环节会再次补写；仍补不上则改为「临时保存」暂存（绝不提交空白卷）", "error");
             else this.askStore.log("页面答案模型已全部写入，提交不会触发“未做完”", "success");
           } else if (st0.total) {
             console.log("[答案模型] 全部 " + st0.total + " 道选择题已写入页面答案模型" + (st0.unknown ? "（另有 " + st0.unknown + " 题无法定位，未参与校验）" : ""));
           }
         } catch (e) { console.log("[答案模型] 校验异常:", e); }
         if (this.defaultConfig.autoSubmit) {
-          let tempsaved = false;   // 因答案不完整而改为「暂存」：不算失败、不阻止跳章（与关闭自动提交一致）
-          // 诊断：哪几题没把答案真正填进页面（填入失败时学习通会弹“您还有未做完的X，确认提交吗？”）
+          let tempsaved = false;
           const unfilled = [];
           for (let i = 0; i < ques.length; i++) "danger" === this.askStore.get(i).status && unfilled.push(i + 1);
           unfilled.length && this.askStore.log("第 " + unfilled.join("、") + " 题未能自动填入答案，提交时可能触发“未做完”确认框", "error");
           if (aiAnswered / ques.length < 0.5 && ques.length > 2) {
-            // ★ 覆盖率过低（多为 API 异常 / 多数题目没取到答案）→ 不再判「提交失败」，
-            //   改为与「关闭自动提交」完全一致：调页面原生「临时保存」暂存已有答案，
-            //   不算失败、也不阻止跳章（答案已入库不会丢），稍后手动补答并提交即可。
             const savedLow = await this._tempSaveWork(iframeWindow, ctx);
             if ("aborted" === savedLow) return void resolve();
             tempsaved = true;
@@ -2030,14 +2844,11 @@
                 : "AI答案覆盖率过低(" + aiAnswered + "/" + ques.length + ")，未提交；本页没有暂存入口，答案仅保留在当前页面，请手动提交",
               "error");
           } else {
-            // 把「答案模型状态查询 / 重填」一并交给提交环节：页面刷新会清空答案，提交前必须能自查自补
             const submitted = await this._submitWork(iframeWindow, Object.assign({}, ctx, { choiceState: choiceState, refillChoices: refillChoices }));
             if ("aborted" === submitted) return void resolve();
             if (true === submitted) {
               this.askStore.log("章节测验已完成", "success");
             } else if ("tempsaved" === submitted) {
-              // ★ 部分题目没拿到答案（AI 返回空 / 未能写入页面）→ 已改为「临时保存」暂存，与「关闭自动提交」一致：
-              //   不算失败、也不阻止跳章（答案已入库不会丢），可稍后手动补答并提交。
               tempsaved = true;
               this.askStore.log("本章有题目未取得答案，未提交空白卷；已调用页面「临时保存」暂存当前答案，请稍后手动补充并提交", "error");
             } else if ("unconfirmed" === submitted) {
@@ -2046,9 +2857,6 @@
               this.askStore.submitFailed = true, this.askStore.log("章节测验提交失败，已停止自动跳章，请手动检查并提交", "error");
             }
           }
-          // ⚠️ 必须用大括号：写成 `if (A) S1; else if (B) S2; else S3, resolve();` 时，
-          //   `resolve()` 会跟在最后那个 else 的语句里 → 前两个分支永不 resolve（Promise 永久挂起、轮询死锁），
-          //   这正是历史上踩过的坑（见关闭自动提交分支的同类注释）。
           if (this.askStore.submitFailed) {
             this.askStore.task.status = "提交失败，请手动提交";
           } else if (tempsaved) {
@@ -2058,8 +2866,6 @@
           }
           resolve();
         } else {
-          // ★ 关闭「自动提交」→ 调页面原生 noSubmit() 做「临时保存(暂存)」：答案入库，之后可手动提交。
-          //   （保留 resolve()：原实现此处没有 resolve()，会让 runningTask 永久为真、轮询死锁）
           const saved = await this._tempSaveWork(iframeWindow, ctx);
           if ("aborted" === saved) return void resolve();
           this.askStore.task.status = "已暂存(未提交)，AI覆盖:" + aiAnswered + "/" + ques.length + (aiAnswered < ques.length ? " 填入:" + succ : "");
@@ -2073,31 +2879,15 @@
         }
       });
     }
-    // ★ 临时保存(暂存)：把答案存进服务器但不提交，供之后手动提交。
-    // 页面原生实现（realwork.html 实测）：noSubmit() → saveWork()
-    //   → POST /work/addStudentWorkNew?...&saveStatus=1&tempsave=1 （$("#form1").serialize()）
-    //   → success(data){ if(data.status){ alert("保存成功！"); setTimeout(reload, 1000) } else alert(data.msg) }
-    //   → complete(){ tempSave=false; $("#tempsave").text("暂时保存") }   ← 这是可靠的「已结束」信号
-    //   注意：noSubmit() 内有 `if(tempSave) return;` 防重，且结束后会把 tempSave 复位。
-    // ★★ 返回三态（旧实现无条件 return true = 会谎报「已暂存」而答案其实没入库）：
-    //   true       = 已拿到**正向回执**（捕获到「保存成功！」/ #tempsave 文案从「正在暂存...」复位）
-    //   false      = 未找到暂存入口；或拿到**明确失败**文案（failRe 命中 data.msg）
-    //   "unknown"  = 入口已触发，但窗口内没等到任何回执（响应慢/被 reload 打断）→ 不判失败，由调用方按「已暂存(未确认)」处理
-    //   "aborted"  = 期间用户手动切章
     async _tempSaveWork(iframeWindow, ctx) {
       const aborted = ctx && "function" == typeof ctx.aborted ? ctx.aborted : function() { return false; };
       const w = iframeWindow;
       if (!w) return false;
       let fn = null;
       try { fn = w.noSubmit; } catch (e) {}
-      let btn = null;                        // 兜底：部分模板把暂存做成真实按钮
-      // ⚠️ 只认「暂存」语义的入口：#tempsave（真机实测的暂存按钮 id）、onclick 指向 noSubmit 的元素。
-      //   旧实现把 .btnSave 也一并选进来 —— 它在真机页面里是【提交】按钮（btnBlueSubmit 失败提示用它定位），
-      //   一旦 noSubmit 不存在就会把「暂存」误点成「提交」，故移除。
+      let btn = null;
       try { btn = w.document && w.document.querySelector("#tempsave, [onclick*='noSubmit']"); } catch (e) {}
       if (!btn) {
-        // ★ 灰度模板（如 mooc1-gray.*）可能换了 id/类名 → 按【精确文案】找暂存入口。
-        //   只认「暂时保存 / 暂存」，绝不认模糊的「保存」二字，避免误点其它控件。
         try {
           const cands = w.document.querySelectorAll("a, button, span, div, input[type=button]");
           for (let i = 0; i < cands.length; i++) {
@@ -2110,18 +2900,13 @@
       if (!hasFn && !btn) { console.log("[暂存] 本页未提供 noSubmit()/暂存按钮，答案仅保留在当前页面"); return false; }
       if (aborted()) return "aborted";
 
-      // ★ 哨兵：暂存完成的判定信号有三条（任一命中即算成功），都必须排除「调用前就存在的旧状态」
-      //   ① /works 的 success 回调 alert「保存成功！」（用哨兵窗口捕获，避免误读页面上残留/其它 alert）
-      //   ② saveWork() 的 complete() 把 #tempsave 文案复位（"正在暂存..." → "暂时保存"）
-      //   ③ （失败）alert(data.msg) —— 用 failRe 判定
       const sentinel = "__cxTempSaveSentinel__";
       const cap = { alerts: [], softFail: "" };
       w[sentinel] = cap;
       const readBtnTxt = () => { try { return String((w.document && w.document.querySelector("#tempsave") || {}).textContent || "").replace(/\s+/g, ""); } catch (e) { return ""; } };
-      const txtBefore = readBtnTxt();          // 调用前的文案（正常为「暂时保存」，页面可能还没渲染出来 → 空）
+      const txtBefore = readBtnTxt();
       const beforeAlerts = cap.alerts.length;
 
-      // 暂存成功/失败页可能弹原生 alert 阻塞脚本 → 临时静音，但**内容要记进哨兵**（这是正向/失败证据）
       const origAlert = w.alert;
       try { w.alert = function(m) { cap.alerts.push(String(m)); console.log("[暂存] 页面 alert 已静音:", m); }; } catch (e) {}
 
@@ -2135,21 +2920,15 @@
         return false;
       }
 
-      // ★ 有界等待回执（最多 TEMPSAVE_WAIT_MS）：saveWork() 是 ajax，成功后 1s 才 reload，
-      //   必须在 reload 之前把结论记下来（reload 后 DOM/变量全没了）。
       const TEMPSAVE_WAIT_MS = 8000, POLL = 250;
       const okRe = /保存成功|暂存成功/;
-      // 暂存失败文案：沿用 _submitWork 里 failRe 的核心项（此处不能跨作用域复用其局部变量，故局部定义精简版）
       const saveFailRe = /(提交失败|作业提交失败|保存失败|出错|异常|请重试|未成功|服务器繁忙|系统繁忙|网络异常|操作失败|账号发生异常|请刷新页面后重试|超过教师限制字数|字数未达到|只能录入不能粘贴)/;
       let ok = false, hardFail = "";
       for (let waited = 0; waited < TEMPSAVE_WAIT_MS; waited += POLL) {
         if (aborted()) { try { w.alert = origAlert; } catch (e) {} try { delete w[sentinel]; } catch (_) {} return "aborted"; }
-        // ① 明确失败文案 → 立即判失败（不必等满窗口）
         const bad = cap.alerts.slice(beforeAlerts).filter(function(m) { return saveFailRe.test(m); })[0];
         if (bad) { hardFail = bad; break; }
-        // ② 正向：alert 出现「保存成功」/「暂存成功」
         if (cap.alerts.slice(beforeAlerts).some(function(m) { return okRe.test(m); })) { ok = true; break; }
-        // ③ 正向：按钮文案已从「正在暂存...」复位（complete 回调的副作用）
         const nowTxt = readBtnTxt();
         if (nowTxt && "正在暂存" !== nowTxt && (txtBefore ? nowTxt === txtBefore : ("暂时保存" === nowTxt || "暂存" === nowTxt))) { ok = true; break; }
         await sleepMs(POLL);
@@ -2157,24 +2936,13 @@
       try { w.alert = origAlert; } catch (e) {}
       try { delete w[sentinel]; } catch (_) {}
       if (hardFail) { console.log("[暂存] 页面返回失败:", hardFail); return false; }
-      if (ok) { console.log("[暂存] 已确认页面临时保存成功（noSubmit/saveWork，正向回执）"); return true; }
-      console.log("[暂存] 已触发暂存但 " + (TEMPSAVE_WAIT_MS / 1000) + "s 内未确认结果（响应慢或被 reload 打断）→ 按「已暂存(未确认)」处理");
+      if (ok) { console.log("[暂存] 已确认页面临时保存成功（正向回执）"); return true; }
+      console.log("[暂存] 已触发暂存但 " + (TEMPSAVE_WAIT_MS / 1000) + "s 内未确认结果 → 按「已暂存(未确认)」处理");
       return "unknown";
     }
-    // 提交章节测验：接管页面弹窗 + 真实点击弹层确认 + 等到提交结果，返回是否提交成功
     async _submitWork(iframeWindow, ctx) {
-      // 返回 true=提交成功 / false=提交失败或需人工 / "aborted"=提交过程中用户手动切章
       const aborted = ctx && "function" == typeof ctx.aborted ? ctx.aborted : function() { return false; };
       const captured = [];
-      // ★★ 根因修复（核心）★★
-      // 学习通这道「确认提交 / 您还有未做完的X，确认提交吗？」的弹层，是题目页调用 **top.workPop(...)**
-      // 弹出的（realwork.html 里 toadd() 结尾就是 `if (top && top.workPop) top.workPop(showTips,...)`），
-      // 也就是说 #workpop 这个 DOM 挂在【最顶层窗口】上，而不是题目页里。
-      // 而题目页的嵌套往往有 4 层以上：
-      //   studentstudy(top) → #iframe(knowledge/cards) → ananas/modules/work/index.html → api/work → 题目页
-      // 旧实现只从题目页往上数 3 层，正好**差一层够不到顶层** → 弹层永远找不到 → 没人点「提交」
-      // → 提交链停死（页面的 performSubmit 压根没被调用），而脚本还因为读不到失败/成功字样谎报“已提交”。
-      // 这里改成：先上溯到最顶层，再自上而下把该顶层下所有同源 iframe 全部收进来。
       const getTopWin = () => {
         let w = iframeWindow;
         try { for (let i = 0; i < 12 && w && w.parent && w.parent !== w; i++) w = w.parent; } catch (e) {}
@@ -2200,7 +2968,6 @@
         return wins;
       };
       const getWins = collectWins;
-      // 弹层可能落在任意一层（顶层 / 作业模块页 / 题目页），统一收集后逐个查找
       const getDocs = () => {
         const out = [];
         collectWins().forEach(function(w) { try { if (w.document) out.push(w.document); } catch (e) {} });
@@ -2215,10 +2982,6 @@
           return String(t).replace(/\s+/g, " ").trim();
         } catch (e) { return ""; }
       };
-      // 提交期间接管**所有可达窗口**的原生弹窗：
-      //  - confirm 一律返回 true（=“确定”）。H5 模板的“您还有未做完的X，确认提交吗？”走的就是它，
-      //    绝不能被当成“取消”，否则等于用户手动点了取消、提交被放弃
-      //  - alert 只记录文本（如“作业提交失败”），既不阻塞脚本，也便于判定提交结果
       const origPopups = [];
       getWins().forEach(function(w) {
         try {
@@ -2235,18 +2998,13 @@
         });
       };
 
-      // ⚠ 页面里有一批「toadd() 校验失败 → alert/toast 后直接 return」的静默断链文案：
-      //   它们不会走提交、也不会留弹层，脚本等满 20s 只能落到 unconfirmed。把文案点名才能在日志里说清原因。
-      //   注意用长句（避免与页面静态说明文字误撞，例如「最多选2项」这类提示就不加进来）。
       const failRe = /(提交失败|作业提交失败|提交出错|提交异常|请重试|未成功|服务器繁忙|系统繁忙|网络异常|操作失败|保存失败|账号发生异常|请刷新页面后重试|答案超过教师限制字数|答案字数未达到教师设置的最少字数要求|只能录入不能粘贴)/;
-      const okRe = /(提交成功|已提交|提交完成|作答已提交|保存成功|重新作答|查看答案)/;              // 用于原生弹窗文本
-      const okPageRe = /(提交成功|答案已保存|已提交成功|提交完成)/;                                   // 用于页面文本（必须收紧：页面里到处是“已完成”“重新作答”等静态文案）
-      const unfinishedRe = /(未做完|未完成|还有\s*\d*\s*题)/;                                        // “还有未做完的题”类确认框
-      const confirmRe = /(确认提交|未做完|提交吗|是否提交|确定提交)/;                                 // 任意模板的“确认层”文案特征
-      const okBtnRe = /^(提交|确定|确认|是|继续|好的|好|OK|Ok|ok|立即提交)$/;                          // 确认按钮文案
-      const cancelRe = /(取消|关闭|返回|暂不|放弃|重做)/;                                            // 绝不点这些
-      // 页面文本扫描只覆盖题目页、且 600ms 缓存一次（旧实现每 200ms 拼接所有帧的 innerText，
-      // 会把整个课程树都算一遍，把检查循环拖到几乎不转）
+      const okRe = /(提交成功|已提交|提交完成|作答已提交|保存成功|重新作答|查看答案)/;
+      const okPageRe = /(提交成功|答案已保存|已提交成功|提交完成)/;
+      const unfinishedRe = /(未做完|未完成|还有\s*\d*\s*题)/;
+      const confirmRe = /(确认提交|未做完|提交吗|是否提交|确定提交)/;
+      const okBtnRe = /^(提交|确定|确认|是|继续|好的|好|OK|Ok|ok|立即提交)$/;
+      const cancelRe = /(取消|关闭|返回|暂不|放弃|重做)/;
       let _lastTextScan = 0, _lastText = "";
       const readText = () => {
         const now = Date.now();
@@ -2268,11 +3026,6 @@
           return !!(el.offsetWidth || el.offsetHeight || (el.getClientRects && el.getClientRects().length));
         } catch (e) { return false; }
       };
-      // 页面自定义弹层（都是 DOM，不是 window.confirm，必须真实点击确认按钮才会继续）
-      //   PC 章节测验/作业（当前模板）：#workpop + #popok —— “您还有未做完的多选题，确认提交吗？”正是这一层，
-      //     由题目页调用 top.workPop() 弹出，DOM 在顶层窗口；#popok 的文案是「提交」（ok.html(okTent)）
-      //   同一模板的另一套确认框：#confirmSubWin（.AlertCon02）里的 a.bluebtn，文案「确认提交？」，onclick=submitCheckTimes()
-      //   H5 模板：#cxAlertBox1 + #okBtn；轻提示：#worktoast + #toastok、#hintPop + #hintOk
       const POPUPS = [
         { box: "#workpop", ok: "#popok", label: "workpop" },
         { box: "#confirmSubWin", ok: ".bluebtn", label: "confirmSubWin" },
@@ -2281,11 +3034,8 @@
         { box: "#cxAlertBox1", ok: "#okBtn", label: "cxAlertBox" },
         { box: ".cx_alert-box", ok: ".cx_alert-blue", label: "cx_alert-box" }
       ];
-      // 需要人工介入、脚本无法自动完成的弹层（如提交次数过多触发的验证码）
       const MANUAL = [{ box: ".verify-box", label: "提交验证码" }, { box: "#verifyCodeWin", label: "提交验证码" }];
-      // 未知弹层兜底：扫描一切“长得像弹窗”的可见容器，只要文案像“确认提交/未做完”就点它的确定按钮
       const POP_SEL = ".maskDiv, .AlertCon02, [id*=pop], [class*=pop], [id*=Pop], [class*=Pop], [id*=alert], [class*=alert], [id*=Alert], [class*=Alert], [id*=dialog], [class*=dialog], [class*=Dialog], [role=dialog], [role=alertdialog]";
-      // 在一个弹层内部挑「确定」按钮：只看文案，绝不点 取消/关闭
       const pickOkBtn = (box) => {
         const list = [];
         try {
@@ -2299,9 +3049,6 @@
         }
         return null;
       };
-      // 同一弹层文案每轮最多点 2 次（首次 + 一次重试），避免弹层卡死时反复触发提交
-      // 在弹层内部挑「取消/关闭」按钮（专供「未达到及格线，请重做」——
-      //   那个框的【确定】=重做、【取消】=正常继续，点错就把页面打回重做循环）
       const pickCancelBtn = (box) => {
         try { const p = box.querySelector("#popno"); if (p && isVisible(p)) return p; } catch (e) {}
         const list = [];
@@ -2324,7 +3071,6 @@
         if (shouldClick && btn) { try { btn.click(); } catch (e) { console.log("[提交] 点击" + btnName + "失败:", e); } return { manual: false, label, text: txt, clicked: true, btnName: btnName }; }
         return { manual: false, label, text: txt, clicked: false, btnName: btnName };
       };
-      // 兜底诊断：把各帧可见的“像弹窗”的元素列出来（只在彻底找不到弹层时打印一次，便于下次取证）
       const dumpCandidates = () => {
         const out = [];
         const docs = getDocs();
@@ -2339,23 +3085,18 @@
         }
         return out.length ? out.join(" || ") : "(各帧均无可见弹层候选)";
       };
-      // 返回 null（无弹层）或 { manual, label, text, clicked }
       let _popScanTick = 0;
       const popupCheck = () => {
         _popScanTick++;
-        const doGeneric = 0 === _popScanTick % 3;   // 通用兜底每 ~600ms 才做一次全帧扫描
+        const doGeneric = 0 === _popScanTick % 3;
         const docs = getDocs();
         for (let i = 0; i < docs.length; i++) {
           const d = docs[i];
-          // ① 需要人工的层（验证码）
           for (let k = 0; k < MANUAL.length; k++) {
             let box = null;
             try { box = d.querySelector(MANUAL[k].box); } catch (e) {}
             if (isVisible(box)) return { manual: true, label: MANUAL[k].label, text: "", clicked: false };
           }
-          // ①.5 「未达到及格线，请重做」专用分支：确定=重做、取消=正常继续 →
-          //     必须点【取消】。若交给下面的 POPUPS（#workpop→#popok）会被点成「确定」=重做，
-          //     表现为「反复提交、反复失败」。另外这条其实意味着**提交已经成功**，只是分数不及格。
           {
             let box = null;
             try { box = d.querySelector("#workpop, .maskDiv, .AlertCon02"); } catch (e) {}
@@ -2365,8 +3106,6 @@
               return r;
             }
           }
-          // ② 已知弹层 ID：按钮优先在弹层内部找（旧实现先在整篇文档里查 cfg.ok，
-          //    像 .bluebtn 这种页面上有 7 个的元素会取错对象）
           for (let k = 0; k < POPUPS.length; k++) {
             const cfg = POPUPS[k];
             let box = null;
@@ -2375,10 +3114,9 @@
             let btn = null;
             try { btn = box.querySelector(cfg.ok); } catch (e) {}
             if (!isVisible(btn)) btn = pickOkBtn(box);
-            if (!isVisible(btn)) { try { btn = d.querySelector(cfg.ok); } catch (e) {} }   // 最后兜底：整篇文档里找
+            if (!isVisible(btn)) { try { btn = d.querySelector(cfg.ok); } catch (e) {} }
             return firePopup(cfg.label, textOf(box).slice(0, 120), btn);
           }
-          // ③ 通用兜底：任何可见的、文案像“确认提交/未做完”的弹层
           if (doGeneric) {
             let cands = [];
             try { const ns = d.querySelectorAll(POP_SEL); for (let q = 0; q < ns.length && q < 200; q++) cands.push(ns[q]); } catch (e) {}
@@ -2394,29 +3132,19 @@
         return null;
       };
 
-      // ★★ 提交前的“答案还在不在”闸门 ★★
-      //   页面提交失败会执行 location.reload()，把 DOM 勾选与 #answer 隐藏域一起清空；
-      //   此时若继续点“提交”，交上去的是**空白卷**，而页面照样会跳转 → 会被误判成“提交成功”。
-      //   所以每轮巡检弹层之前都先确认答案还在：不在就按已存答案重填；8 秒仍补不上就拒绝提交，
-      //   宁可停下来让用户手动确认，也绝不交白卷。
       const hasChoiceCheck = ctx && "function" === typeof ctx.choiceState;
       let refillDeadline = 0;
       let refillTries = 0;
-      // 页面是否还在加载/重载：加载中的 DOM 里答案本来就「还没回来」，
-      // 此刻既不该触发提交（可能是白卷），也不该判定缺失——先等它稳定。
       const pageBusy = () => {
         try { const d = iframeWindow.document; return !!(d && "loading" === d.readyState); } catch (e) { return true; }
       };
-      // 返回语义：true = 答案都在、可以提交；"wait" = 还缺答案，本轮先别提交、下一轮继续补；false = 补不上了，拒绝提交
-      //   旧实现最后一行「有缺就 return false」= **第一次补写失败就直接判死**，20s 期限完全没用上；
-      //   配合补写本身的 bug，等于「一题没写上 → 立刻拒绝提交」。现在改成「先给窗口、超时/无进展才判死」。
       const ensureAnswers = () => {
         if (!hasChoiceCheck) return true;
         let st = null;
         try { st = ctx.choiceState(); } catch (e) { return true; }
         if (!st || !st.total || !st.missing.length) { refillDeadline = 0; refillTries = 0; return true; }
         if (!refillDeadline) {
-          refillDeadline = Date.now() + 15000;   // 补写窗口 15s（短于外层 20s，保证真补不上时能走到 reject 分支）
+          refillDeadline = Date.now() + 15000;
           refillTries = 0;
           console.log("[提交] 答案模型缺失 " + st.missing.map(function(i) { return i + 1; }).join("、") + " 题，尝试补写…");
         }
@@ -2428,7 +3156,6 @@
           return true;
         }
         refillTries++;
-        // 连续 6 次补写「毫无进展」⇒ 结构性失败（不是页面还在重载），立刻失败，不空等
         if (refillTries >= 6) {
           console.log("[提交] 连续 6 次补写无进展，仍有 " + st.missing.length + " 题为空 → 拒绝提交空白答案");
           return false;
@@ -2447,24 +3174,17 @@
           captured.length = 0; clickCounts = {}; popupHits = 0; lastPopupText = ""; refillDeadline = 0;
           const startHref = readFrameHref();
           const t0 = Date.now(), deadline = t0 + 20e3;
-          let triggered = false;                                  // 是否已成功调用过页面提交入口
-          let clickedConfirm = 0;                                 // 本轮真正点到“确定/提交”的次数（正向证据）
-          let popupClearedAt = 0;                                 // 确认层被点掉、从界面上消失的时刻
-          let sawFail = false;                                    // 本轮是否已捕获到明确的失败提示
+          let triggered = false;
+          let clickedConfirm = 0;
+          let popupClearedAt = 0;
+          let sawFail = false;
           while (Date.now() < deadline) {
             if (aborted()) { wasAborted = true; break; }
             const el = Date.now() - t0;
-            // ★★ 触发提交之前，先确认答案还在页面上 ★★
-            //   页面提交失败会 location.reload() 清空答案；若此时不重填就直接触发，页面会拿着空模型走完提交链，
-            //   交上去就是一张空白卷（页面照样跳转，于是被误判成“提交成功”）。先补写，补不上就拒绝提交。
-            if (pageBusy()) { await sleepMs(300); continue; }   // 页面正在重载 → 等它稳，绝不在这时候触发提交
+            if (pageBusy()) { await sleepMs(300); continue; }
             const _ea = ensureAnswers();
             if (_ea === false) { answersBad = true; break; }
-            if (_ea === "wait") { await sleepMs(300); continue; }   // 还有题没写进模型 → 本轮不触发提交，下一轮继续补
-            // ★ 触发器分三级兜底：函数入口 → submitCheckTimes → 页面上真实的提交按钮
-            //   （旧实现只在“全程无任何反应”时才调 submitCheckTimes，且**调用后不再巡检弹层**，
-            //     于是 submitCheckTimes 弹出的“未做完/确认提交”框永远没人点 → 提交链卡死，
-            //     而脚本还会因为读不到“失败/成功”字样误判为提交成功并跳章）
+            if (_ea === "wait") { await sleepMs(300); continue; }
             if (!triggered) {
               try { if (iframeWindow.btnBlueSubmit) { iframeWindow.btnBlueSubmit(); triggered = true; console.log("[提交] 已调用 btnBlueSubmit()"); } } catch (e) { console.log("[提交] btnBlueSubmit 异常:", e); }
             }
@@ -2483,8 +3203,6 @@
               }
               if (domBtn) { try { domBtn.click(); triggered = true; console.log("[提交] 已点击页面提交按钮:", sels.join("/")); } catch (e) {} }
             }
-            // ★ 弹层巡检：每轮都查、都点。“您还有未做完的多选题，确认提交吗？”与普通“确认提交？”都必须点掉，
-            //   这里永远点确定/提交，绝不当成“取消”（这两个框的确定按钮正是页面发起真正提交的入口）
             const hit = popupCheck();
             if (hit && hit.manual) { needManual = hit.label; break; }
             if (hit) {
@@ -2493,21 +3211,17 @@
               if (hit.lowScore) console.log("[提交] 本章提交成功、但未达到及格线（已点“取消”继续，未触发重做）");
               popupClearedAt = 0;
             } else if (clickedConfirm > 0 && !popupClearedAt) popupClearedAt = Date.now();
-            // ★ 结果判定
             const failMsg = captured.filter(function(m) { return failRe.test(m); })[0];
             const txt = readText();
             if (failMsg || failRe.test(txt)) { sawFail = true; failedAny = true; console.log("[提交] 捕获失败提示:", failMsg || txt.slice(0, 120)); break; }
             if (captured.some(function(m) { return okRe.test(m); }) || okPageRe.test(txt)) { console.log("[提交] 检测到提交成功提示"); ok = true; break; }
-            // 正向证据①：确认层被我们点掉、且之后 2.5 秒内没再冒弹层、也没有失败提示 → 提交确实发出去了
             if (clickedConfirm > 0 && popupClearedAt && Date.now() - popupClearedAt > 2500 && !popupCheck()) {
               console.log("[提交] 确认弹层已点掉且无失败提示，判定提交成功（最后弹层:", lastPopupText || "(无)", "）"); ok = true; break;
             }
-            // 正向证据②：提交后页面自己跳走了（confirmSubmitWork 成功时会 location.href = data.url）
             if (clickedConfirm > 0 && readFrameHref() !== startHref) { console.log("[提交] 提交后页面已跳转，判定提交成功"); ok = true; break; }
             await sleepMs(200);
           }
           if (needManual || wasAborted || ok || answersBad) break;
-          // 等待窗口结束，先看还有什么没走完（★ 失败分支跳出时绝不能在这里被判成成功）
           const stuck = popupCheck();
           if (stuck && stuck.manual) { needManual = stuck.label; break; }
           if (sawFail) {
@@ -2520,9 +3234,6 @@
             console.log("[提交] 第 " + attempt + " 次结束：确认弹层已点掉、无失败提示，判定提交成功（最后弹层:", lastPopupText || "(无)", "）");
             ok = true;
           } else {
-            // ★ 没有任何“已提交”的正向证据时，绝不判成功。
-            //   旧实现走到这里会无条件 ok = true（“无失败提示、无残留弹层”=成功），
-            //   于是弹层没人点、提交根本没发生，脚本却报“章节测验已完成，全部答出”并自动跳到下一章。
             unconfirmed = true;
             console.log("[提交][诊断] 第 " + attempt + " 次：未找到确认弹层，也未捕获成功/失败提示；可见候选:", dumpCandidates());
             if (attempt < 2) await sleepMs(1200);
@@ -2540,31 +3251,20 @@
         return false;
       }
       if (!ok && answersBad) {
-        // ★★ 本轮修复（核心）★★
-        //   答案不完整（有题目 AI 没给出答案 / 没能写进页面模型）时，**不再直接判「提交失败」**：
-        //   改为调用页面原生的「暂时保存」(noSubmit) 把已有答案存进服务器 —— 与「关闭自动提交」的行为完全一致。
-        //   答案不会丢，稍后手动补答再提交即可；按用户要求，暂存不算失败、也不阻止跳章。
         const saved = await this._tempSaveWork(iframeWindow, ctx);
         if ("aborted" === saved) return "aborted";
-        if (false !== saved) {   // true 或 "unknown"（已触发但未确认）都算「已暂存」，不判失败
-          console.log("[提交] 答案不完整（有题未答/未写入页面）→ 已改为调用页面「临时保存」暂存当前答案"
-            + (saved === "unknown" ? "（结果未确认）" : ""));
+        if (false !== saved) {
+          console.log("[提交] 答案不完整（有题未答/未写入页面）→ 已改为调用页面「临时保存」暂存当前答案" + (saved === "unknown" ? "（结果未确认）" : ""));
           return "tempsaved";
         }
         this.askStore.log("页面上没有可提交的答案（答案没写进页面模型，或被页面刷新/失败重载清空），自动补写未成功，本页也没有暂存入口，已停止自动跳章，请手动检查", "error");
         return false;
       }
       if (!ok && (failedAny || unconfirmed)) {
-        // ★ 1.2.8：页面报失败（如 alert「作业提交失败！」）或「未确认结果」时，不再直接判「提交失败」。
-        //   理由：这两条路径下**答案多数已经写进 DOM / 页面模型**，此时调页面原生「临时保存」
-        //   (noSubmit) 仍有意义 —— 答案能入库、不丢，稍后手动补答再提交即可。
-        //   比旧行为（停在页面上什么都不做、还阻止跳章）严格更优。
-        //   ⚠️ 注意顺序：本条必须在 answersBad 之后 —— 答案压根没写进模型时暂存等于存空白卷，无意义。
         const savedF = await this._tempSaveWork(iframeWindow, ctx);
         if ("aborted" === savedF) return "aborted";
-        if (false !== savedF) {  // true 或 "unknown" 都算「已暂存」
-          console.log("[提交] 页面返回失败/未确认结果 → 已改为调用页面「临时保存」暂存当前答案"
-            + (savedF === "unknown" ? "（结果未确认）" : ""));
+        if (false !== savedF) {
+          console.log("[提交] 页面返回失败/未确认结果 → 已改为调用页面「临时保存」暂存当前答案" + (savedF === "unknown" ? "（结果未确认）" : ""));
           this.askStore.log(savedF === "unknown"
             ? "章节测验未能正常提交；已请求页面「临时保存」暂存答案（结果未确认，请稍后在页面上核对后再手动提交）"
             : "章节测验未能正常提交（页面返回失败提示或未能确认结果）；已调用页面「临时保存」暂存答案，请稍后手动提交", "error");
@@ -2581,9 +3281,12 @@
     }
     homework() {
       return new Promise(async (resolve) => {
+        CX_LAST_FRAME = _unsafeWindow;   // 供「抓现场」使用
         const Timu = _unsafeWindow.document.querySelectorAll(".questionLi");
-        if (!Timu)
+        if (!Timu || Timu.length === 0) {
+          this.askStore.log("未找到题目元素（.questionLi），本页可能不是作业页", "error");
           return void resolve();
+        }
         let ques = [];
         for (let i = 0; i < Timu.length; i++) {
           let data = getQuestion("2", Timu[i]);
@@ -2591,40 +3294,85 @@
         }
         this.askStore.reset(), this.askStore.count = ques.length, this.askStore.task.name = "作业";
         for (let i = 0; i < ques.length; i++) {
-          await sleep(this.defaultConfig.answerInterval), this.askStore.insert(ques[i]), this.askStore.task.work.inx = i;
+          await sleep(this.answerSpeed), this.askStore.insert(ques[i]), this.askStore.task.work.inx = i;
+          _unsafeWindow._aiQIdx = i;
           let data = await getAnswers(ques[i]);
           this.askStore.get(i).allAnswer = data;
+          if (data && data[0] && data[0].parseNote) this.askStore.log("第" + (i + 1) + "题 " + data[0].parseNote, "info");
           let tmp = fillAnswer(data, ques[i], Timu[i], _unsafeWindow);
-          tmp ? (this.askStore.get(i).status = "primary", this.askStore.get(i).answer = tmp) : (this.askStore.get(i).status = "danger", this.askStore.get(i).answer = "暂无答案"), this.askStore.get(i).dom = Timu[i];
+          if (tmp) {
+            this.askStore.get(i).status = "primary";
+            this.askStore.get(i).answer = tmp;
+          } else {
+            const e = (data && data[0] && data[0].error) ||
+              (ques[i] && (ques[i]._fillError || (ques[i]._parseError ? "题目解析失败：" + ques[i]._parseError : ""))) ||
+              "AI 未返回可用的答案";
+            this.askStore.get(i).status = "danger";
+            this.askStore.get(i).answer = "暂无答案\n\n【失败原因】" + e;
+            this.askStore.log("第" + (i + 1) + "题失败：" + e, "error");
+          }
+          this.askStore.get(i).dom = Timu[i];
         }
+        resolve();   // 1.2.10 修复：原实现正常路径不 resolve，外层 await 永久挂住
       });
     }
     exam() {
       return new Promise(async (resolve) => {
+        CX_LAST_FRAME = _unsafeWindow;   // 供「抓现场」使用
         this.askStore.reset(), this.askStore.count = 1, this.askStore.task.name = "考试";
         let data = getQuestion("3", _unsafeWindow.document.body);
+        if (!data || !data.question) {
+          this.askStore.log("未能解析当前考题（页面结构未匹配），请手动答题", "error");
+          this.askStore.task.status = "考题解析失败";
+          return void resolve();
+        }
         this.askStore.insert(data), this.askStore.task.work.inx = 0;
         let data1 = await getAnswers(data);
         this.askStore.get(0).allAnswer = data1;
-        let tmp = fillAnswer(data1, data, document.getElementsByClassName("mark_table")[0], _unsafeWindow);
-        if (tmp ? (this.askStore.get(0).status = "primary", this.askStore.get(0).answer = tmp) : (this.askStore.get(0).status = "danger", this.askStore.get(0).answer = "暂无答案"), this.defaultConfig.autoExam) {
-          await sleep(this.defaultConfig.answerInterval);
-          const nextButton = $('.nextDiv .jb_btn:contains("下一题")');
-          nextButton ? nextButton.click() : (this.askStore.log("已完成答题，请自行检查答案填写后自行提交", "success"), this.askStore.task.status = "已完成答题，请自行检查答案填写后自行提交");
+        if (data1 && data1[0] && data1[0].parseNote) this.askStore.log("本题 " + data1[0].parseNote, "info");
+        const markTable = document.getElementsByClassName("mark_table")[0];
+        let tmp = markTable ? fillAnswer(data1, data, markTable, _unsafeWindow) : false;
+        if (tmp) {
+          this.askStore.get(0).status = "primary";
+          this.askStore.get(0).answer = tmp;
+        } else {
+          const e = (data1 && data1[0] && data1[0].error) ||
+            (data && (data._fillError || (data._parseError ? "题目解析失败：" + data._parseError : ""))) ||
+            (markTable ? "AI 未返回可用的答案" : "页面没找到 .mark_table，无法定位答题区");
+          this.askStore.get(0).status = "danger";
+          this.askStore.get(0).answer = "暂无答案\n\n【失败原因】" + e;
+          this.askStore.log("本题失败：" + e, "error");
+        }
+        if (this.defaultConfig.autoExam) {
+          await sleep(this.answerSpeed);
+          const nextButton = $$1('.nextDiv .jb_btn:contains("下一题")');
+          nextButton.length ? nextButton.click() : (this.askStore.log("已完成答题，请自行检查答案填写后自行提交", "success"), this.askStore.task.status = "已完成答题，请自行检查答案填写后自行提交");
         } else
           this.askStore.task.status = "未开启自动切换，等待手动切换";
+        resolve();
       });
     }
     pdf(iframeWindow) {
       return new Promise(async (resolve) => {
-        const contentWindow = iframeWindow.document.querySelector("#panView").contentWindow;
-        contentWindow.scrollTo(0, contentWindow.document.body.scrollHeight), resolve();
+        try {
+          const panView = iframeWindow.document.querySelector("#panView");
+          const contentWindow = panView && panView.contentWindow;
+          if (contentWindow && contentWindow.document && contentWindow.document.body) {
+            contentWindow.scrollTo(0, contentWindow.document.body.scrollHeight);
+          } else {
+            console.log("[pdf] 未找到 #panView 或其为空，跳过滚动");
+          }
+        } catch (e) {
+          console.log("[pdf] 滚动异常（已忽略）:", e);
+        }
+        resolve();
       });
     }
     async s(iframeWindow) {
       /* 已完成的章节测验，无需处理 */
     }
   }
+
   const pinia = pinia$1.createPinia(), app = vue.createApp(App).use(ElementPlus).use(pinia), _self = _unsafeWindow, top = _self.top, formStore = useformStore();
   switch (app.mount((() => {
     try {
@@ -2652,17 +3400,10 @@
       }
       const cxModel = new Cx();
       cxModel.askStore.log("脚本初始化成功！", "success");
-      // 构建标识：用于从 F12 控制台直接确认“当前实际运行的到底是哪一版脚本”，
-      // 专门解决“本地明明改好了、篡改猴里却还是旧副本”的排查难题
-      const BUILD_TAG = "1.2.9-20261011h";
+      const BUILD_TAG = CX_BUILD;
       try {
-        console.log("[构建] 学习通AI助手 已加载 | version=1.2.9 build=" + BUILD_TAG + " | 特征: 全帧递归找确认弹层 / 确定性直写答案模型#answer<qid> / 补写链路已修(改读allAnswer并拍平) / 及格线弹窗点取消(不重做) / 自动答题开关已接入(死开关修复) / 关闭自动提交或答案异常→调noSubmit暂存 / 暂存有三态回执(true/false/unknown,不再谎报) / max_tokens=1000 / timeout=45s且超时不重试 / 元数据加@connect*(任意API域名可用)");
+        console.log("[构建] 学习通AI助手 v1.2.10 build=" + BUILD_TAG + " | 特征: 页面内诊断面板(免F12) / 反F12拦截 / 视频倍速可调可关 / 日志上限300条 / 字体解码只算实际字符 / 按题型分配输出预算 / 本地答案缓存 / 推理模型参数阶梯");
       } catch (e) {}
-      // ===== 章节任务调度（支持“手动切章抢占”）=====
-      // runningTask  是否有章节任务正在执行
-      // taskEpoch    任务代次：+1 即让正在跑的任务在下一个检查点自行中止
-      // handledKey   已交给任务处理的“规范化地址标识”（防止同一章节重复执行）
-      // pendingKey   任务执行期间用户切换到的新内容标识（旧任务退出后立即接手）
       let runningTask = false, taskEpoch = 0, handledKey = null, pendingKey = null, navSeen = false, seenKey = null, seenTimes = 0;
       const SLOG = function() { try { console.log.apply(console, ["[调度]"].concat([].slice.call(arguments))); } catch (e) {} };
       const shortUrl = (u) => {
@@ -2670,8 +3411,6 @@
         const m = u.match(/[?&]chapterId=(\d+)/);
         return (m ? "ch" + m[1] : String(u).slice(0, 110)) + (String(u).length > 110 ? "…" : "");
       };
-      // 规范化：剔除每次重载都可能被重新生成的会话令牌（enc/cpi/openc），
-      // 否则页面自己刷新一下（参数重发）就会被误判成“用户切章”，导致正在答题的任务被无故中止、整章重跑
       const VOLATILE_PARAM = /^(enc|cpi|openc|fragmentid)$/i;
       const normalizeUrl = (u) => {
         if (!u) return u;
@@ -2700,7 +3439,7 @@
         const ctx = { aborted };
         let bailed = false;
         const bail = () => {
-          if (bailed) return;   // 一轮里会被多个检查点调用，只提示/记录一次
+          if (bailed) return;
           bailed = true;
           SLOG("任务中止(epoch " + myEpoch + ")：检测到用户已切换内容");
           cxModel.askStore.log("检测到已手动切换章节，已中止当前任务", "info");
@@ -2746,7 +3485,7 @@
               if (aborted()) { bail(); break; }
               cxModel.askStore.log("视频任务已完成", "success");
             } else if (iframe == null ? void 0 : iframe.src.match(/\/ananas\/modules\/work\/index.html/)) {
-              if (false === formStore.forminput.autoAnswer) {   // ★「自动答题」开关：显式关闭才跳过（原先该开关是死的，永不读取；用 ===false 防老配置缺键被误判为关闭）
+              if (false === formStore.forminput.autoAnswer) {
                 cxModel.askStore.log("自动答题已关闭，跳过本节测验/作业", "success");
                 continue;
               }
@@ -2777,8 +3516,6 @@
         await sleep(formStore.forminput.interval);
         if (aborted()) return bail();
         const curChapterUrl = readChapterUrl() || startChapterUrl;
-        // 只有“整轮都停留在本节”才算真正处理完；若期间地址已变（按规范化后比对，忽略会话令牌抖动），
-        // 说明新内容尚未被处理，这里绝不能把它记成已处理，否则会被永久跳过（finally 里会按当前地址重开任务）
         const stayedPut = normalizeUrl(curChapterUrl) === startChapterKey;
         doneChapterUrl = stayedPut ? curChapterUrl : null;
         SLOG("本轮结束判定: 停留本节=" + stayedPut + "，当前=" + shortUrl(curChapterUrl));
@@ -2800,7 +3537,6 @@
           navSeen = false;
           const curKey = readChapterKey();
           if (doneChapterUrl) {
-            // 正常跑完：记下本节；若这期间用户已手动切走，立即接手用户当前所在内容
             handledKey = normalizeUrl(doneChapterUrl);
             if (curKey && curKey !== handledKey) {
               SLOG("正常结束后地址已变，立即接手:", shortUrl(readChapterUrl()));
@@ -2809,8 +3545,6 @@
               startWork();
             }
           } else if (curKey) {
-            // 被手动切章抢占：本任务未完成任何内容，直接按用户“当前实际所在”的内容重开任务
-            // （注意不能用被抢占前的旧地址记账，否则「切走再切回同一章」会被误判为已处理而永远不填）
             SLOG("本任务被抢占/未完成，按当前内容重开:", shortUrl(readChapterUrl()));
             handledKey = curKey;
             cxModel.askStore.reset();
@@ -2830,19 +3564,14 @@
           const curUrl = readChapterUrl();
           const curKey = normalizeUrl(curUrl);
           if (!curKey) return;
-          // 连续两轮看到同一地址才算“稳定”
           if (curKey === seenKey) seenTimes++; else { seenKey = curKey; seenTimes = 1; }
-          // 地址离开了“已处理内容” → 记一次导航（用于识别“切走再切回同一章”：回来时地址虽相同，但页面已重载）
           if (curKey !== handledKey) navSeen = true;
-          // 无事可做：地址就是已处理内容，且期间没有离开过
           if (curKey === handledKey && !navSeen) return;
-          // 已有处理记录时，地址变化需连续两轮稳定才认定为用户切换（过滤瞬时中间态）
           if (handledKey !== null && seenTimes < 2) {
             SLOG("地址变化待确认(" + seenTimes + "/2):", shortUrl(curUrl));
             return;
           }
           if (runningTask) {
-            // 任务执行中检测到用户切换：抢占旧任务（它在下一个检查点自行退出），退出后立即接手新内容
             if (pendingKey !== curKey) {
               pendingKey = curKey;
               const oldEpoch = taskEpoch;
@@ -2873,15 +3602,17 @@
     case "/mooc-ans/mooc2/work/dowork":
     case "/mooc2-ans/mooc2/work/dowork":
       const cxModel1 = new Cx();
-      if (false === formStore.forminput.autoAnswer) {   // ★「自动答题」开关（显式关闭才跳过）
+      if (false === formStore.forminput.autoAnswer) {
         cxModel1.askStore.log("自动答题已关闭，跳过本次作业", "success");
         break;
       }
-      cxModel1.askStore.log("脚本初始化成功！", "success"), await( cxModel1.homework());
+      cxModel1.askStore.log("脚本初始化成功！", "success");
+      try { await cxModel1.homework(); } catch (e) { cxModel1.askStore.log("作业处理异常：" + (e && e.message ? e.message : e), "error"); }
       break;
     case "/exam-ans/exam/test/reVersionTestStartNew":
       const cxModel2 = new Cx();
-      await( cxModel2.exam()), cxModel2.askStore.log("脚本初始化成功！", "success");
+      try { await cxModel2.exam(); } catch (e) { cxModel2.askStore.log("考试处理异常：" + (e && e.message ? e.message : e), "error"); }
+      cxModel2.askStore.log("脚本初始化成功！", "success");
   }
 
 })(Vue, Pinia, ElementPlus, md5, $);
