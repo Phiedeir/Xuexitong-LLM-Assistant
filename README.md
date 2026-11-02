@@ -1,251 +1,263 @@
 # 超星学习通 AI 学习助手
 
-> 一款基于 AI 大语言模型的 [超星学习通（Chaoxing）](https://www.chaoxing.com) 自动学习与答题油猴脚本。  
-> 纯 AI 作答，不依赖任何第三方题库；支持视频、文档、章节测验、作业、考试的全自动处理。
+> 基于 AI 大语言模型的[超星学习通](https://www.chaoxing.com)自动学习与答题油猴脚本。
+> 纯 AI 作答，不依赖第三方题库；覆盖视频、文档、章节测验、作业、考试的全流程。
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.2.13-blue.svg)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Tampermonkey-FF8000.svg)](https://www.tampermonkey.net/)
+[![Upstream](https://img.shields.io/badge/upstream-March--OwO-lightgrey.svg)](https://github.com/March-OwO/Xuexitong-LLM-Assistant)
 
-![Tampermonkey](https://img.shields.io/badge/platform-Tampermonkey-FF8000.svg)
-
-![version](https://img.shields.io/badge/version-1.2.11-blue.svg)
-
-> **本仓库是 [March-OwO/Xuexitong-LLM-Assistant](https://github.com/March-OwO/Xuexitong-LLM-Assistant) 的自维护分支。**
-> 基于上游 `1.2.9` 继续迭代，重点解决**推理模型接入**（gpt-5/6 系、o 系、DeepSeek-R）以及
-> 「答不出来 / 填不进去」时的**可诊断性**问题。完整改动见 [CHANGELOG.md](CHANGELOG.md)。
-
----
-
-## 项目简介
-
-本脚本通过调用兼容 OpenAI 协议的 AI 大模型（默认 **DeepSeek**），自动完成学习通中的各类任务：  
-自动播放视频 / 音频、自动滚动文档、AI 智能答题并自动提交。
-
-所有代码开源透明，**不含任何广告、追踪或题库付费墙**。API Key 仅保存在你本地浏览器中。
-
-## 界面预览
-
-![脚本界面预览](preview.png)
-
-> 上图为脚本悬浮窗（毛玻璃 AI 按钮 + 运行框 / 日志 / 声明）的真实运行截图。
+> **本仓库是 [March-OwO/Xuexitong-LLM-Assistant](https://github.com/March-OwO/Xuexitong-LLM-Assistant) 的自维护分支**，
+> 基于上游 `1.2.9` 继续迭代。重点解决两件事：
+> ① **推理模型接入**（gpt-5/6 系、o 系、DeepSeek-R 等会先写思维链的模型）；
+> ② **可诊断性**（平台禁用 F12 后，如何看清「为什么没答出来」）。
+> 完整改动见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
-## 功能特性
+## 安装
 
-### AI智能答题（全题型覆盖）
+### 一键安装
 
-- 支持：单选题、多选题、判断题、填空题、简答题、名词解释、论述题、计算题
-- 每题独立调用 AI，内置 **三重重试**（遇 `429` / `503` 自动递增等待）
-- 简答题通过提示词约束，输出纯净答案（无 Markdown 干扰符号）
+**→ [点击安装脚本](https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing-ai-llm.user.js) ←**
+
+Tampermonkey 会直接弹出安装页，点「安装」即可。
+
+### 前置：Tampermonkey
+
+| 浏览器 | 安装方式 |
+|---|---|
+| Chrome / Edge / 360 极速 / 百分 | [Chrome 应用商店](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) |
+| Firefox | [Firefox Add-ons](https://addons.mozilla.org/zh-CN/firefox/addon/tampermonkey/) |
+| 应用商店不可用 | [Tampermonkey 官网](https://www.tampermonkey.net/) 下载对应版本 |
+
+装完记得在浏览器「扩展 → 篡改猴 → 详细信息」里打开 **允许用户脚本** 和 **网站访问权限：在所有网站上**。这两项没开，脚本装了也不会执行。
+
+### 手动安装
+
+下载 [`chaoxing-ai-llm.user.js`](chaoxing-ai-llm.user.js)，拖进 Tampermonkey 管理面板，确认安装。
+
+### 首次配置
+
+1. 进入任意**章节学习页**（URL 含 `/studentstudy`），右下角出现蓝色毛玻璃 **AI** 按钮
+2. 点它 → 「打开配置」→ 填入 **API Key**
+3. 保存后刷新页面
+
+只填 Key 就能用（默认走 DeepSeek 官方接口 + `deepseek-chat`）。换模型见[支持的模型](#支持的模型)。
+
+---
+
+## 更新
+
+脚本内已声明 `@updateURL` / `@downloadURL`：
+
+```
+https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing-ai-llm.user.js
+```
+
+装过一次之后，Tampermonkey 会自己检测新版本并提示更新，不用再手动拖文件。
+
+> 国内 `raw.githubusercontent.com` 偶尔不稳定。手动更新可用镜像：
+> `https://cdn.jsdelivr.net/gh/Phiedeir/Xuexitong-LLM-Assistant@main/chaoxing-ai-llm.user.js`
+> 但镜像有 CDN 缓存延迟，自动更新仍以 raw 为准。
+
+---
+
+## 功能
+
+### AI 答题
+
+支持单选题、多选题、判断题、填空题、简答题、名词解释、论述题、计算题。
+
+- 每题独立调用，带重试（`429` / `5xx` 指数退避，`401` / `403` 直接报错不重试）
+- 答案本地缓存：同题库不同章节重复出现时不重复计费
+- 按题型分配输出预算：单选/判断 24 token、多选 48、填空 240、简答 480
 
 ### 全自动任务点
 
-| 任务类型     | 行为                          |
-| -------- | --------------------------- |
-| 视频       | 静音自动播放至完成；**倍速可调可关**（`视频倍速` 1~16，默认 16；播放器夹到上限时日志会打印实际生效值） |
-| 任务点自动切换  | 节点任务完成后自动切换至下一个节点           |
-| PPT / 文档 | 自动滚动至最后一页                   |
-| 章节测验     | AI 答题 + 自动提交                |
-| 作业/考试    | AI 答题 + 覆盖率安全检查             |
+| 任务类型 | 行为 |
+|---|---|
+| 视频 | 静音播放至完成；**倍速可调可关**（1~16），播放器夹到上限时日志会打印实际生效值 |
+| 音频 | 静音播放至结束 |
+| PPT / 文档 | 自动滚动到底 |
+| 章节测验 | AI 答题 + 自动提交（含「未做完」弹层处理） |
+| 作业 / 考试 | AI 答题 + 覆盖率安全检查 |
 
-### 关闭思维链（1.2.11 新增）
+### 推理模型适配
 
-`gpt-5.x / 6.x / o 系` 等推理模型默认会先写一大段分析再给答案，`content` 经常被 `max_completion_tokens`
-从中间截断，导致「答案明明有却填不进去」。脚本按命中率依次探测六种关闭参数：
+`gpt-5.x / 6.x`、`o1-o9` 等推理模型默认先写一大段分析再给答案，`content` 常被 `max_completion_tokens`
+从中间截断，表现为「答案明明有却填不进去」。脚本按命中率依次探测六种关闭参数，被拒的记入黑名单不再重试：
 
 | 参数 | 适用的后端 |
 |---|---|
 | `reasoning_effort: "none"` | OpenAI gpt-5.1 / 6 系 |
-| `chat_template_kwargs: { enable_thinking: false }` | vLLM / Qwen 系自建（会返回 `reasoning_content` 的几乎都认这条） |
+| `chat_template_kwargs: { enable_thinking: false }` | vLLM / Qwen 系自建（返回 `reasoning_content` 的基本都认这条） |
 | `enable_thinking: false` | 部分中转站的顶层简写 |
 | `thinking: { type: "disabled" }` | Anthropic 兼容层 |
 | `reasoning_effort: "minimal"` / `"low"` | 兜底压缩思考长度 |
 
-被服务商拒绝的变体会记入黑名单，后续题目不再重复试探。
+同时自动处理两类模型差异：
 
-### 结构化输出（1.2.11 新增）
+- `max_tokens` 与 `max_completion_tokens` 互换
+- `temperature` 在推理模型上只接受默认值，非 1 时自动剥离
+
+### 结构化输出
 
 选题类题目要求模型只输出一行 `答案：B. 3月14日`，脚本同时拿到**字母**和**选项原文**：
-原文用于核对（防止选项顺序错位），字母用于兜底（原文有格式差异时）。分析文字一律不参与匹配。
 
-### 可诊断（1.2.11 新增）
+- 原文用于核对 —— 防止选项顺序错位导致填错
+- 字母用于兜底 —— 原文有全角/标点/空格差异时
 
-平台禁用了 F12（`keydown` 拦截 + devtools 检测后 `debugger` 死循环），因此新增**页面内诊断面板**：
+分析文字一律不参与选项匹配。
+
+### 页面内诊断（不用 F12）
+
+学习通有反调试（`keydown` 拦截 + devtools 检测后循环 `debugger`），F12 一开页面就卡住。
+脚本在 AI 按钮上方注入一排悬浮按钮：
 
 | 按钮 | 作用 |
 |---|---|
-| 诊断 | 端点、模型名、`/v1/models` 可用列表、参数阶梯逐级结果、被拒变体 |
-| 复制日志 | 导出运行日志（最多 300 条），剪贴板不可用时弹文本框 |
-| 抓现场 | 导出当前题目的 DOM 结构（`li` 结构、`#answer<qid>`、`qid`、`.choice<qid>`） |
-| 清缓存 | 清空本地答案缓存 |
-| 日志面板 | 打开 / 收起主面板 |
+| **诊断** | 端点、模型名、`/v1/models` 可用模型列表、参数阶梯逐级结果、被拒变体 |
+| **复制日志** | 导出运行日志（最多 300 条），剪贴板不可用时弹文本框 |
+| **抓现场** | 导出当前题目的 DOM 结构（`li` 结构、`#answer<qid>`、`qid`、`.choice<qid>`） |
+| **清缓存** | 清空本地答案缓存 |
+| **日志面板** | 打开 / 收起主面板 |
 
-### 多模型支持
+控制台可用时也保留同名全局函数：`__cxDiag()`、`__cxSnap()`、`__cxCacheStat()`、`__cxClearCache()`。
 
-默认接入 DeepSeek V4 Flash，目前测试最稳定，可以流畅答题，还可自由切换任意 OpenAI 兼容端点：  
-DeepSeek Pro、智谱 GLM、OpenAI、硅基流动（SiliconFlow）、豆包 等。
+### 界面
 
-### 安全机制
-
-- AI 答案覆盖率低于 **50%**（且题目数 > 2）时**拒绝提交**，防止空答案误交
-- 并发锁防止任务重复执行
-- 所有 API 调用均通过 HTTPS 加密
-
-### 清爽界面
-
-- 右下角毛玻璃圆形 **AI** 按钮，点击显隐悬浮窗运行框
-- 接口返回区展示每道题的**输入 / 输出 Token** 真实消耗
+- 右下角毛玻璃圆形 **AI** 按钮，点击显隐悬浮窗
+- 运行框实时显示当前题目、AI 原话、填入的选项
+- 接口返回区显示每题输入 / 输出 Token（服务商不返回 usage 时按字符估算并标注）
 
 ---
 
-## 支持的 AI 模型
+## 支持的模型
 
-| 模型           | API 地址（默认留空即 DeepSeek）                     | 模型名（示例）                   |
-| ------------ | ------------------------------------------ | ------------------------- |
-| DeepSeek（默认） | `https://api.deepseek.com`                 | `deepseek-chat`           |
-| 智谱 GLM       | `https://open.bigmodel.cn/api/paas/v4`     | `glm-4-flash`             |
-| OpenAI       | `https://api.openai.com/v1`                | `gpt-4o-mini`             |
-| 硅基流动         | `https://api.siliconflow.cn/v1`            | `deepseek-ai/DeepSeek-V3` |
-| 豆包           | `https://ark.cn-beijing.volces.com/api/v3` | 你的 Endpoint ID            |
+默认 **DeepSeek**，任何兼容 `/v1/chat/completions` 的服务都能用。
 
-> 只要是兼容 `/v1/chat/completions` 的服务，填入对应地址与模型名即可使用。
-
----
-
-## 安装步骤
-
-### 第一步：安装 Tampermonkey（篡改猴）
-
-Tampermonkey 俗称「篡改猴」，是运行油猴脚本的浏览器扩展，**只需装一次**。按你的浏览器任选其一：
-
-| 浏览器                            | 安装方式                                                                                                                             |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| Chrome / Edge / 360 极速 / 百分浏览器 | 打开 [Chrome 网上应用店](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) 点击「添加至 Chrome / Edge」 |
-| Firefox                        | 在 [Firefox Add-ons](https://addons.mozilla.org/zh-CN/firefox/addon/tampermonkey/) 点击「添加到 Firefox」                                |
-| 无法访问应用商店                       | 前往 [Tampermonkey 官网](https://www.tampermonkey.net/) 下载对应浏览器版本手动安装                                                                |
-
-安装完成后，点击浏览器右上角拓展/工具栏，会出现篡改猴(Tampermonkey)图标。点击图标 → 「管理面板」可进入脚本管理页。
-
-### 第二步：添加本脚本
-
-1. 在本仓库点击 `chaoxing-ai-llm.user.js` → 右上角 **Download / 下载** 到本地；
-2. 点击浏览器右上角拓展，点击篡改猴，打开管理面板（图标 → 管理面板）；
-3. 把下载的 `.user.js` 文件**直接拖入**面板空白处；
-4. 在弹出的确认页点击「安装」；
-5. 打开浏览器的管理拓展，查看篡改猴详情信息，开启‘允许用户脚本’。
-
-### 第三步：配置并启用
-
-1. 进入任意**学习通课程页面**，右下角会出现蓝色毛玻璃 **AI** 圆形按钮，点击它 → 「打开配置」；
-2. 在 [platform.deepseek.com](https://platform.deepseek.com) 注册并获取 API Key，填入「AI API 密钥」（**必填**）；
-3. 如需切换模型，修改「API 地址」与「模型名称」（留空即默认 DeepSeek V4 Flash）；
-4. 点击保存，刷新学习通页面，脚本即开始自动学习。
-
-> 💡 安装后若脚本未自动运行，请确认 Tampermonkey 图标处脚本状态为「已启用」，且当前页面属于 `chaoxing.com` 域名。
-
----
-
-## 配置说明
-
-| 配置项       | 必填 | 说明                             |
-| --------- | -- | ------------------------------ |
-| API Key（API 密钥） | ✅  | API 服务商提供的访问密钥                 |
-| API 地址    | ❌  | 留空默认 DeepSeek；只填域名或只到 `/v1` 会自动补全 `/v1/chat/completions`，也可填任意 OpenAI 兼容端点 |
-| 模型名称      | ❌  | 必须填服务商文档里的**准确**模型 ID；留空默认 `deepseek-chat` |
-| 自动答题 / 自动视频 / 自动切换 / 自动提交 | ❌ | 任务开关，默认全部开启 |
-| 答题间隔(秒) | ❌ | 每题之间等待，支持小数（下限 0.1）。`1~2` 稳，`0.3~0.5` 快 |
-| 任务间隔(秒) | ❌ | 任务点之间的等待 |
-| 视频倍速开关 / 视频倍速 | ❌ | 关掉按 1.0 原速；倍速 1~16 |
-| 视频静音     | ❌ | 默认开，避免自动播放被浏览器拦截 |
-| 考试自动切换   | ❌ | 考试页逐题自动翻页 |
-
-> 配置项里没有的（如 `keepLog` 日志条数上限）可用篡改猴 `GM_setValue` 手工改，默认 300。
-
----
-
-## 使用说明
-
-- **AI 按钮**：右下角毛玻璃圆形按钮，点击显示 / 隐藏悬浮窗。
-- **运行框**：实时显示当前任务与 AI 回答状态（如「执行任务中」）。
-- **运行日志**：记录任务执行历史，便于排查异常。
-- **声明**：脚本使用与免责声明。
-- **接口返回区**：展示每道题的输入 / 输出 Token 消耗，方便估算费用。
-
----
-
-## 隐私与安全
-
-- **API Key 仅存储在你的浏览器本地**（Tampermonkey 的 `GM_setValue`），不会上传至任何第三方服务器。
-- 不收集、不上传你的学习账号信息。
-- 所有网络请求均指向你配置的 AI 服务商官方地址，全程 HTTPS。
-- 代码完全开源，可自行审计，不含广告或追踪代码。
-
----
-
-## 常见问题（FAQ）
-
-**Q：脚本安装后一直显示「未被执行」，篡改猴图标是红色 ×？**  
-A：通常是「允许用户脚本」开关没开启——脚本装了，但浏览器根本没把它注入页面。开启方法：
-
-1. 浏览器右上角「**扩展**」→「**管理扩展**」；
-2. 找到「篡改猴」→ 点「**详细信息**」；
-3. 打开「**允许用户脚本**」开关；
-4. 刷新页面即可。
-
-> 若开关已开启仍不注入，再检查扩展「详细信息」里的「**网站访问权限**」是否为「**在所有网站上**」。
-
-**Q：安装后看不到悬浮窗 / AI 按钮，脚本像没运行？**  
-A：脚本**只在「章节学习页」**（URL 含 `/studentstudy`）、**作业页**（`/dowork`）、**考试页**才会显示悬浮窗与右下角 AI 按钮；在课程列表 / 首页不会显示，属正常现象。若进入章节页仍无按钮：
-
-1. 按 `F12` 打开控制台，看是否有红色报错；
-2. 脚本依赖的 Vue / ElementPlus / jQuery 等库来自 `cdn.staticfile.org`，若该 CDN 在你网络下无法访问，脚本可能无法运行（可在篡改猴管理面板查看脚本行是否有红色警告）；
-3. 确认篡改猴中该脚本为「已启用」，且当前网址属于 `chaoxing.com`。
-
-**Q：如何切换 AI 模型？**  
-A：悬浮窗「打开配置」→ 修改 API 地址与模型名称 → 保存即可。
-
-**Q：API 调用失败 / 报错 503 怎么办？**  
-A：脚本内置三重重试，限流错误会自动等待后重试；若持续失败，请检查 Key 是否有效或切换服务商。
-
-**Q：会泄露我的账号或答案吗？**  
-A：不会。除你配置的 AI 接口外，脚本不与任何第三方通信。
-
-**Q：页面禁用了 F12，打不开控制台怎么办？**  
-A：学习通有反调试（`keydown` 拦截 + devtools 检测后循环 `debugger`）。1.2.11 起提供了**页面内诊断面板**：
-点右下角 AI 按钮上方的「诊断」按钮，结果会写进「运行日志」标签页，再点「复制日志」导出。
-要在控制台里直接调，也保留了 `__cxDiag()` / `__cxSnap()` / `__cxCacheStat()` / `__cxClearCache()` 全局函数。
-
-**Q：题目一直显示「暂无答案」，但 Token 也不是 0，怎么回事？**  
-A：说明 HTTP 通了、模型也回话了，但回的不是答案。三种常见情况，面板都会写明：
-
-| 日志里的关键词 | 含义 | 处理 |
+| 服务 | API 地址 | 模型名示例 |
 |---|---|---|
-| `CONTENT_EMPTY` / `reasoning 1843 字符` | 模型只写思维链，`content` 被截断 | 换上表中能生效的关思维链参数，或换非推理模型 |
-| `CONTENT_ANALYSIS` | 中转站把分析写进了 `content` | 同上；脚本会先尝试从分析里抠答案 |
-| `三种匹配都没命中任何选项` | 选项文本没抓到，或 AI 给的文本对不上 | 点「抓现场」看 `li .after` 计数是否为 0 |
+| DeepSeek | 留空即可 | `deepseek-chat` |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| 硅基流动 | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V3` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| 豆包 | `https://ark.cn-beijing.volces.com/api/v3` | 你的 Endpoint ID |
+| 自建 / 中转站 | 你的地址 | 服务商文档里的准确 ID |
 
-**Q：提交后显示「❌ 0.0 分」，是答错了还是没答？**  
-A：`0.0 分` 且没有任何选中标记 = **空白卷**，答案没写进页面。看「运行日志」里该题的失败原因，
-以及「抓现场」里 `#answer<qid>` 是否为空。
+> **API 地址可以偷懒**：只填域名或只到 `/v1`，脚本会自动补全 `/v1/chat/completions`。
+> **模型名必须准确**：这是 400 错误最常见的来源。不确定就先点「诊断」，它会列出该服务商的可用模型。
 
-**Q：怎么自己发布新版本？**  
-A：仓库内附了自动化脚本：
+---
+
+## 配置项
+
+| 配置项 | 必填 | 说明 |
+|---|---|---|
+| API Key | ✅ | 服务商提供的访问密钥 |
+| API 地址 | ❌ | 留空 = DeepSeek；支持只填域名，自动补全路径 |
+| 模型名称 | ❌ | 留空 = `deepseek-chat` |
+| 自动答题 / 自动视频 / 自动切换 / 自动提交 | ❌ | 任务开关，默认全开 |
+| 答题间隔(秒) | ❌ | 每题等待，支持小数（下限 0.1）。`1~2` 稳，`0.3~0.5` 快 |
+| 任务间隔(秒) | ❌ | 任务点之间等待 |
+| 视频倍速开关 / 视频倍速 | ❌ | 关掉按 1.0 原速；倍速 1~16 |
+| 视频静音 | ❌ | 默认开，避免自动播放被浏览器拦截 |
+| 考试自动切换 | ❌ | 考试页逐题自动翻页 |
+
+> 未出现在面板上的（如 `keepLog` 日志条数上限）可用 Tampermonkey 的 `GM_setValue` 手工改。
+
+---
+
+## 排查
+
+### 先点「诊断」
+
+结果写进「运行日志」标签页，能看到：
+
+```
+构建: 1.2.12-20261102c
+API地址: https://xxx.com/v1/chat/completions
+模型: gpt-6.1-sol | 推理模型判定: true
+Key: 已填 51 位，前缀 sk-xxxx…
+→ GET …/models 列可用模型…
+该服务商可用模型（7 个）：…
+✓ 模型名在列表中
+→ 逐级试探参数阶梯…
+✓ chat2 [model,stream,messages,max_completion_tokens,chat_template_kwargs] 通过
+```
+
+### 常见症状对照
+
+| 现象 | 日志关键词 | 原因 | 处理 |
+|---|---|---|---|
+| 一直「暂无答案」，Token 为 0 | `HTTP 400` / `Model Not Exist` | 模型名不对 | 诊断里比对模型列表 |
+| 一直「暂无答案」，Token 不为 0 | `CONTENT_EMPTY` | 只写了思维链，`content` 被截断 | 换能生效的关思维链参数，或换非推理模型 |
+| 同上 | `CONTENT_ANALYSIS` | 中转站把分析写进了 `content` | 同上；脚本会先尝试从分析里抠答案 |
+| 答完显示「暂无答案」 | `三种匹配都没命中任何选项` | 选项没抓到，或 AI 文本对不上 | 「抓现场」看 `li .after` 计数 |
+| 提交后 `❌ 0.0 分` | 该题 `_fillError` | **空白卷**，答案没写进页面 | 「抓现场」看 `#answer<qid>` 是否为空 |
+| `status=0` | `XHR_BLOCKED` | `@connect` 没放行 | 篡改猴 → 本脚本 → 设置 → 用户域白名单 加 `*` |
+| `401` / `403` | `AUTH_401` | Key 错 / 含空格 / 无权限 | 重新粘贴 Key |
+
+### 其他
+
+**脚本装了不执行？** 浏览器「扩展 → 篡改猴 → 详细信息」，打开「允许用户脚本」和「在所有网站上」。
+
+**看不到 AI 按钮？** 只在这三个页面出现：章节学习页（`/studentstudy`）、作业页（`/dowork`）、考试页。
+
+**依赖库加载失败？** 脚本依赖 `cdn.staticfile.org` 上的 Vue / ElementPlus / jQuery，该 CDN 不通会导致脚本整体不运行。
+
+---
+
+## 开发与发版
+
+```
+├─ chaoxing-ai-llm.user.js   # 唯一产物
+├─ scripts/bump.mjs          # 版本号 + CHANGELOG 自动递增
+├─ CHANGELOG.md
+└─ .gitattributes            # 统一 LF
+```
 
 ```bash
-node scripts/bump.mjs patch "这次修了什么"   # 同时改 @version、CX_BUILD、CHANGELOG
-node --check chaoxing-ai-llm.user.js         # 语法自检
-git add -A && git commit -m "chore(release): v1.2.12" && git tag v1.2.12
+# 1. 改完代码，跑一次 bump（同时改 @version、CX_BUILD、CHANGELOG.md）
+node scripts/bump.mjs patch "这次修了什么"
+
+# 2. 语法自检（必须 EXIT=0）
+node --check chaoxing-ai-llm.user.js
+
+# 3. 提交并打 tag
+git add -A && git commit -m "chore(release): v1.2.13" && git tag v1.2.13
+
+# 4. 推送
 git push origin main --tags
 ```
 
-版本号规则：`patch` 修 bug / 调参 / 改选择器，`minor` 加功能，`major` 配置格式变或流程重写。
-Tampermonkey 靠 `@version` 判断更新，必须严格递增。
+版本号规则：
+
+| 位 | 什么时候动 | 例子 |
+|---|---|---|
+| **主版本** | 配置格式变了、答题流程重写 | `1.2.x → 2.0.0` |
+| **次版本** | 新增功能 | `1.2.x → 1.3.0` |
+| **修订号** | 修 bug、调参、改选择器、改提示词 | `1.2.12 → 1.2.13` |
+
+Tampermonkey 靠 `@version` 判断更新，必须严格递增。`bump.mjs` 会拒绝降级。
+`CX_BUILD`（形如 `1.2.12-20261102c`）写在日志首行，用于区分同版本号的不同构建。
 
 ---
 
-## ⚠️ 免责声明
+## 隐私
+
+- **API Key 只存在你浏览器本地**（`GM_setValue`），不上传任何第三方
+- 不收集、不上传学习账号信息
+- 所有网络请求只指向你配置的 AI 端点，全程 HTTPS
+- 代码完全开源，可自行审计，无广告无追踪
+
+---
+
+## 免责声明
 
 1. 本脚本仅供**个人学习辅助与技术研究**使用，请遵守所在学校 / 机构的相关规定。
-2. 使用本脚本产生的任何学习记录、成绩或后果，均由使用者自行承担。
-3. 作者不对因使用本脚本导致的任何账号风险、成绩问题或纠纷负责。
+2. 使用本脚本产生的任何学习记录、成绩或后果，由使用者自行承担。
+3. 作者不对因使用本脚本导致的账号风险、成绩问题或纠纷负责。
 4. 请合理使用，勿用于违背学术诚信的场合。

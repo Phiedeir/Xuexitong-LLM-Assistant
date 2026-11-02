@@ -16,6 +16,11 @@
 
 ---
 
+## [1.2.13] - 2026-11-02
+
+- 重写 README，补齐 @homepageURL/@supportURL，声明面板显示构建号
+- build: `1.2.13-20261102c`
+
 ## [1.2.12] - 2026-11-02
 
 - add @updateURL/@downloadURL for Tampermonkey auto-update
