@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         学习通AI学习助手
 // @namespace    https://github.com/Phiedeir/Xuexitong-LLM-Assistant
-// @version      1.2.11
+// @version      1.2.12
 // @author       Phiedeir（基于 March-OwO 的 1.2.9 维护）
 // @description  学习通AI助手，使用AI大语言模型答题，任务点自动跳转，视频文档全自动。1.2.11：关闭思维链（6 种参数变体自动探测）+ 结构化输出「答案：B. 选项原文」+ 页面内诊断面板（免 F12）+ 视频倍速可调可关。
+// @updateURL    https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing-ai-llm.user.js
+// @downloadURL  https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing-ai-llm.user.js
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/*
 // @match        *://*.nbdlib.cn/*
@@ -74,7 +76,7 @@
     } catch (e) {}
   })();
 
-  const CX_BUILD = "1.2.11-20261102a";
+  const CX_BUILD = "1.2.12-20261102b";
 
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;

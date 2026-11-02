@@ -16,6 +16,11 @@
 
 ---
 
+## [1.2.12] - 2026-11-02
+
+- add @updateURL/@downloadURL for Tampermonkey auto-update
+- build: `1.2.12-20261102b`
+
 ## [1.2.11] - 2026-11-02
 
 ### 新增
