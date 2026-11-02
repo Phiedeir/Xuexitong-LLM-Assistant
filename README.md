@@ -4,7 +4,7 @@
 > 纯 AI 作答，不依赖第三方题库；覆盖视频、文档、章节测验、作业、考试的全流程。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.13-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Tampermonkey-FF8000.svg)](https://www.tampermonkey.net/)
 [![Upstream](https://img.shields.io/badge/upstream-March--OwO-lightgrey.svg)](https://github.com/March-OwO/Xuexitong-LLM-Assistant)
 [![Powered by DeepSeek](https://img.shields.io/badge/AI%20powered%20by-DeepSeek-4D6BFE.svg)](https://www.deepseek.com)
@@ -178,7 +178,7 @@ https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing
 结果写进「运行日志」标签页，能看到：
 
 ```
-构建: 1.2.12-20261102c
+构建: 2.0.0-20261102e
 API地址: https://xxx.com/v1/chat/completions
 模型: gpt-6.1-sol | 推理模型判定: true
 Key: 已填 51 位，前缀 sk-xxxx…
@@ -233,22 +233,35 @@ node scripts/bump.mjs patch "这次修了什么"
 node --check chaoxing-ai-llm.user.js
 
 # 3. 提交并打 tag
-git add -A && git commit -m "chore(release): v1.2.13" && git tag v1.2.13
+git add -A && git commit -m "chore(release): v2.0.1" && git tag v2.0.1
 
 # 4. 推送
 git push origin main --tags
 ```
 
-版本号规则：
+### 版本号体系
+
+**本分支从 `2.0.0` 起使用独立版本序列**，不再跟随上游 March-OwO 的 `1.x`。
+
+理由：上游停在 `1.2.9`，而本分支在其上做了大量重构（推理模型适配、诊断面板、结构化输出）。
+继续沿用 `1.2.x` 会让人误以为只是上游的小补丁，也无法判断「我的版本是上游的还是 forks 的」。
+`@version` 跳到 `2.x` 后，一眼就能区分：
+
+| `@version` 范围 | 含义 |
+|---|---|
+| `1.2.9` 及以下 | 上游 March-OwO 原版 |
+| `2.x` | Phiedeir 自维护分支（本仓库） |
+
+版本号分级：
 
 | 位 | 什么时候动 | 例子 |
 |---|---|---|
-| **主版本** | 配置格式变了、答题流程重写 | `1.2.x → 2.0.0` |
-| **次版本** | 新增功能 | `1.2.x → 1.3.0` |
-| **修订号** | 修 bug、调参、改选择器、改提示词 | `1.2.12 → 1.2.13` |
+| **主版本** | 配置格式变了、答题流程重写、版本体系调整 | `2.0.0 → 3.0.0` |
+| **次版本** | 新增功能 | `2.0.0 → 2.1.0` |
+| **修订号** | 修 bug、调参、改选择器、改提示词 | `2.0.0 → 2.0.1` |
 
 Tampermonkey 靠 `@version` 判断更新，必须严格递增。`bump.mjs` 会拒绝降级。
-`CX_BUILD`（形如 `1.2.12-20261102c`）写在日志首行，用于区分同版本号的不同构建。
+`CX_BUILD`（形如 `2.0.0-20261102e`）写在日志首行与「声明」面板，用于区分同版本号的不同构建。
 
 ---
 

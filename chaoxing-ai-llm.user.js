@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通AI学习助手
 // @namespace    https://github.com/Phiedeir/Xuexitong-LLM-Assistant
-// @version      1.2.14
+// @version      2.0.0
 // @author       Phiedeir（基于 March-OwO 的 1.2.9 维护）
 // @description  学习通AI答题助手：全题型 AI 作答、任务点自动跳转、视频文档全自动。支持任意 OpenAI 兼容端点，自动适配推理模型（gpt-5/6 系、o 系），内置免 F12 诊断面板。
 // @homepageURL  https://github.com/Phiedeir/Xuexitong-LLM-Assistant
@@ -40,7 +40,7 @@
   'use strict';
 
   // ══════════════════════════════════════════════════════════════════════
-  // 1.2.10：平台把 F12 禁掉了（keydown 拦截 + devtools 检测后 debugger 死循环，
+  // v1.2.x：平台把 F12 禁掉了（keydown 拦截 + devtools 检测后 debugger 死循环，
   //   一开控制台整个页面就停住）。这里做三件事：
   //   ① 在 window 捕获阶段抢在页面的 keydown 监听之前放行开发者工具快捷键
   //   ② 包一层 Function 构造，把「注入型 debugger」抹掉（源码内写死的断点管不到）
@@ -78,7 +78,7 @@
     } catch (e) {}
   })();
 
-  const CX_BUILD = "1.2.14-20261102d";
+  const CX_BUILD = "2.0.0-20261102e";
 
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -93,7 +93,7 @@
   var _GM_getResourceText = (() => "undefined" != typeof GM_getResourceText ? GM_getResourceText : void 0)(), _GM_getValue = (() => "undefined" != typeof GM_getValue ? GM_getValue : void 0)(), _GM_info = (() => "undefined" != typeof GM_info ? GM_info : void 0)(), _GM_setValue = (() => "undefined" != typeof GM_setValue ? GM_setValue : void 0)(), _GM_xmlhttpRequest = (() => "undefined" != typeof GM_xmlhttpRequest ? GM_xmlhttpRequest : void 0)(), _unsafeWindow = (() => "undefined" != typeof unsafeWindow ? unsafeWindow : void 0)();
 
   // ══════════════════════════════════════════════════════════════════════
-  // 配置层（1.2.10 修复：键合并）
+  // 配置层（v1.2.x 修复：键合并）
   //   旧实现 `_GM_getValue("config") || defaultConfig$1` 不做合并——
   //   只要存过一份早期版本配置，后来新增的键就永远是 undefined，
   //   aiModel 缺键 → 掉回默认值 → 必然 400。这里逐键合并默认值。
@@ -221,7 +221,7 @@
   let defaultConfig = getConfig();
 
   // ══════════════════════════════════════════════════════════════════════
-  // 1.2.10 核心：推理模型适配
+  // v1.2.x 核心：推理模型适配
   //   问题：gpt-5 / gpt-6 / o 系等推理模型（1）不再接受 max_tokens，
   //         必须用 max_completion_tokens；（2）只接受 temperature=1，
   //         传 0.1 直接 400。旧脚本两条硬编码同时踩中 → 每题都 400
@@ -241,7 +241,7 @@
   const PARAM_ERR_RE = /(max_tokens|max_completion_tokens|temperature|top_p|reasoning_effort|chat_template_kwargs|enable_thinking|thinking|unsupported[_\s]?(parameter|value|field)|not\s+supported|不支持|invalid[_\s]?(value|parameter)|unknown[_\s]?(parameter|field)|does\s+not\s+support)/i;
   const MODEL_ERR_RE = /(model[_.\s]?(not[_.\s]?found|not[_.\s]?exist|does\s+not\s+exist|unavailable)|invalid[_.\s]?model|no\s+such\s+model|model.*?(不存在|无效|不可用)|模型.*?(不存在|无效))/i;
 
-  // 1.2.10 省 token：本地答案缓存。
+  // v1.2.x 省 token：本地答案缓存。
   //   同一题库在不同章节 / 不同周次反复出现，旧实现每次都发请求。
   //   以「题型 + 题干 + 全部选项」做键，命中直接返回，零 token、零延迟。
   const ANS_CACHE_KEY = "anscache2", ANS_CACHE_MAX = 3000;
@@ -263,7 +263,7 @@
     } catch (e) {}
   };
 
-  // 1.2.10 省 token：按题型算输出预算。
+  // v1.2.x 省 token：按题型算输出预算。
   //   旧实现不分题型一律 max_tokens=1000 —— 单选题正确答案只有 1 个字母，
   //   那一千个 token 的额度纯属摆设（虽按实际用量计费，但推理模型会把额度拿去买思维链）。
   const tokenBudget = (type) => {
@@ -332,7 +332,7 @@
   };
 
   // 从各种响应形态里捞正文。
-  // ⚠️ 1.2.10 关键修复：reasoning_content 是思维链，不是答案。
+  // ⚠️ v1.2.x 关键修复：reasoning_content 是思维链，不是答案。
   //   旧实现 `if (!s && m.reasoning_content) s = ...` 把思维链当答案返回，
   //   于是 matchAnswer 拿一段"我们需要回答中文题目…"去和选项精确比对，必然对不上，
   //   偏偏这条路径没有 error 字段 → 面板只显示「AI 返回空答案，且未记录原因」。
@@ -2225,7 +2225,7 @@
         array[i] = decodedData.charCodeAt(i);
       return array;
     })(fontMatch[1]), font = Typr$1.parse(fontData), table = JSON.parse(_GM_getResourceText("ttf"));
-    // 1.2.10 性能修复（提速关键）：旧实现无条件遍历 19968..40870 共 20902 个码位，
+    // v1.2.x 性能修复（提速关键）：旧实现无条件遍历 19968..40870 共 20902 个码位，
     //   每个都跑 codeToGlyph + glyphToPath + JSON.stringify + md5 —— 纯同步 CPU，每章重算，
     //   实测单次数秒。而页面上真正出现的混淆字符通常只有几十个。
     //   改为：先把 .font-cxsecret 里实际出现的码位收齐，只对这些算映射；字符级替换也不再逐字建 RegExp。
@@ -2545,7 +2545,7 @@
   }, update(index, question) {
     this.task.work.questionList[index] = question;
   }, log(msg, level = "info") {
-    // 1.2.10：上限从 20 提到可配置（默认 300）—— F12 被平台禁用时，这个面板就是唯一排查窗口
+    // v1.2.x：上限从 20 提到可配置（默认 300）—— F12 被平台禁用时，这个面板就是唯一排查窗口
     let cap = 300;
     try { const v = parseInt(getConfig().keepLog); if (isFinite(v)) cap = Math.min(Math.max(v, 20), 2000); } catch (e) {}
     while (this.task.log.length >= cap) this.task.log.shift();
@@ -2588,7 +2588,7 @@
       // 页面内诊断按钮组：诊断 / 复制日志 / 清缓存 / 日志面板（不依赖 F12）
       try { injectDiagUI(this.askStore); } catch (e) { console.log("[诊断UI] 挂载失败:", e); }
     }
-    // 1.2.10：答题间隔实时读取配置（改完保存即生效，不用刷新页面重跑整章）
+    // v1.2.x：答题间隔实时读取配置（改完保存即生效，不用刷新页面重跑整章）
     get answerSpeed() {
       const v = parseFloat(getConfig().answerInterval);
       return isFinite(v) && v >= 0 ? v : 1;
@@ -2623,7 +2623,7 @@
       const playerButton = iframeWindow.document.querySelector(".vjs-big-play-button");
       if (!player) { this.askStore.log("未取得 videojs 实例，本视频跳过", "error"); return; }
 
-      // ── 倍速：可开关、可调（1.2.10 新增）──────────────────────────
+      // ── 倍速：可开关、可调（v1.2.x 新增）──────────────────────────
       const cfg = getConfig();
       const rateOn = cfg.videoRateOn !== false;
       const raw = parseFloat(cfg.videoRate);
@@ -3317,7 +3317,7 @@
           }
           this.askStore.get(i).dom = Timu[i];
         }
-        resolve();   // 1.2.10 修复：原实现正常路径不 resolve，外层 await 永久挂住
+        resolve();   // v1.2.x 修复：原实现正常路径不 resolve，外层 await 永久挂住
       });
     }
     exam() {
@@ -3406,7 +3406,7 @@
       cxModel.askStore.log("脚本初始化成功！", "success");
       const BUILD_TAG = CX_BUILD;
       try {
-        console.log("[构建] 学习通AI助手 v1.2.10 build=" + BUILD_TAG + " | 特征: 页面内诊断面板(免F12) / 反F12拦截 / 视频倍速可调可关 / 日志上限300条 / 字体解码只算实际字符 / 按题型分配输出预算 / 本地答案缓存 / 推理模型参数阶梯");
+        console.log("[构建] 学习通AI助手 v" + BUILD_TAG + " | 特征: 页面内诊断面板(免F12) / 反F12拦截 / 视频倍速可调可关 / 日志上限300条 / 字体解码只算实际字符 / 按题型分配输出预算 / 本地答案缓存 / 推理模型参数阶梯 / 关闭思维链 / 结构化输出");
       } catch (e) {}
       let runningTask = false, taskEpoch = 0, handledKey = null, pendingKey = null, navSeen = false, seenKey = null, seenTimes = 0;
       const SLOG = function() { try { console.log.apply(console, ["[调度]"].concat([].slice.call(arguments))); } catch (e) {} };
