@@ -4,7 +4,7 @@
 > 纯 AI 作答，不依赖第三方题库；覆盖视频、文档、章节测验、作业、考试的全流程。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Tampermonkey-FF8000.svg)](https://www.tampermonkey.net/)
 [![Upstream](https://img.shields.io/badge/upstream-March--OwO-lightgrey.svg)](https://github.com/March-OwO/Xuexitong-LLM-Assistant)
 [![Powered by DeepSeek](https://img.shields.io/badge/AI%20powered%20by-DeepSeek-4D6BFE.svg)](https://www.deepseek.com)
@@ -79,11 +79,30 @@ https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing
 
 | 任务类型 | 行为 |
 |---|---|
-| 视频 | 静音播放至完成；**倍速可调可关**（1~16），播放器夹到上限时日志会打印实际生效值 |
+| 视频 | 静音播放至完成；**倍速可调可关**（1~16）、**后台/小窗不暂停**；播放器夹倍速到上限时日志会打印实际生效值 |
 | 音频 | 静音播放至结束 |
 | PPT / 文档 | 自动滚动到底 |
 | 章节测验 | AI 答题 + 自动提交（含「未做完」弹层处理） |
 | 作业 / 考试 | AI 答题 + 覆盖率安全检查 |
+
+### 后台 / 小窗不暂停
+
+学习通的播放器监听 `visibilitychange` 与 `blur`，页面一失焦就 `pause()`。所以「切标签页、
+最小化、开画中画」都会中断 —— 这跟窗口尺寸无关，是失焦事件触发的。
+
+脚本从三层抵消：
+
+| 层 | 做法 | 作用 |
+|---|---|---|
+| ① | `Object.defineProperty` 伪装 `document.hidden` / `visibilityState` / `hasFocus()` | **主防线**：监听器就算触发，读到的也是「可见」，不会执行暂停 |
+| ② | 捕获阶段 `stopImmediatePropagation` 拦截 `visibilitychange` / `blur` / `pagehide` | 补充：拦住脚本注入之后注册的监听器 |
+| ③ | 用 `video` 的 `timeupdate` 事件驱动恢复播放 | 兜底：真被暂停了也立刻拉回来 |
+
+第 ③ 层是关键。纯靠 `setInterval` 轮询的话，后台标签页的定时器会被 Chrome 节流到
+**1 次/分钟**，真被暂停了要等一分钟才恢复；而 `timeupdate` 由媒体解码驱动，后台仍按
+约 4Hz 触发，不受定时器节流影响。
+
+配置项 `后台保持播放` 可随时关闭（默认开启）。
 
 ### 推理模型适配
 
@@ -165,6 +184,7 @@ https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing
 | 任务间隔(秒) | ❌ | 任务点之间等待 |
 | 视频倍速开关 / 视频倍速 | ❌ | 关掉按 1.0 原速；倍速 1~16 |
 | 视频静音 | ❌ | 默认开，避免自动播放被浏览器拦截 |
+| 后台保持播放 | ❌ | 默认开。切标签页 / 最小化 / 画中画时不暂停 |
 | 考试自动切换 | ❌ | 考试页逐题自动翻页 |
 
 > 未出现在面板上的（如 `keepLog` 日志条数上限）可用 Tampermonkey 的 `GM_setValue` 手工改。

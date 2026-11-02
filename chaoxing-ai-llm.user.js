@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通AI学习助手
 // @namespace    https://github.com/Phiedeir/Xuexitong-LLM-Assistant
-// @version      2.0.0
+// @version      2.1.0
 // @author       Phiedeir（基于 March-OwO 的 1.2.9 维护）
 // @description  学习通AI答题助手：全题型 AI 作答、任务点自动跳转、视频文档全自动。支持任意 OpenAI 兼容端点，自动适配推理模型（gpt-5/6 系、o 系），内置免 F12 诊断面板。
 // @homepageURL  https://github.com/Phiedeir/Xuexitong-LLM-Assistant
@@ -78,7 +78,7 @@
     } catch (e) {}
   })();
 
-  const CX_BUILD = "2.0.0-20261102e";
+  const CX_BUILD = "2.1.0-20261102f";
 
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -113,6 +113,7 @@
     videoRate: 16,
     videoRateOn: true,
     videoMute: true,
+    videoKeepAlive: true,
     keepLog: 300
   };
 
@@ -162,7 +163,8 @@
       { name: "interval", label: "任务间隔(秒)", type: "number", value: defaultConfig$1.interval, desc: "任务点（视频/测验/文档）之间的等待" },
       { name: "videoRateOn", label: "视频倍速开关", type: "switch", value: defaultConfig$1.videoRateOn, desc: "关闭后按 1.0 倍原速播放。倍速过高有被判异常的风险" },
       { name: "videoRate", label: "视频倍速", type: "number", value: defaultConfig$1.videoRate, desc: "1 ~ 16。播放器若把倍速夹到上限（常见 2~4），日志会打印实际生效值" },
-      { name: "videoMute", label: "视频静音", type: "switch", value: defaultConfig$1.videoMute, desc: "静音播放，避免自动播放被浏览器拦截" }
+      { name: "videoMute", label: "视频静音", type: "switch", value: defaultConfig$1.videoMute, desc: "静音播放，避免自动播放被浏览器拦截" },
+      { name: "videoKeepAlive", label: "后台保持播放", type: "switch", value: defaultConfig$1.videoKeepAlive, desc: "切标签页 / 最小化 / 小窗时不暂停。原理：伪装 document.hidden + 拦截 visibilitychange/blur + 用媒体时钟恢复播放" }
     ]
   }, {
     name: "exam",
@@ -971,6 +973,39 @@
       }));
       doc.body.appendChild(box);
     } catch (e) { console.log("[诊断UI] 注入失败:", e); }
+  };
+
+  // ── 后台 / 小窗保持播放 ──────────────────────────────────────────────
+  // 学习通的播放器监听 visibilitychange 与 blur，页面一失焦就 pause()，所以
+  // 「切标签页 / 最小化 / 开画中画」都会中断。三层抵消：
+  //   ① 伪装 document.hidden / visibilityState —— 主防线，监听器即使触发也读到「可见」
+  //   ② 捕获阶段掐断事件 —— 只能拦住脚本注入之后注册的监听器，作为补充
+  //   ③ 用媒体时钟驱动恢复 —— timeupdate 在后台仍按 ~4Hz 触发（媒体解码不受
+  //      定时器节流影响），比 setInterval 可靠：后台标签页的定时器会被 Chrome
+  //      节流到 1 次/分钟，纯靠轮询要等很久才能恢复。
+  const maskVisibility = (win) => {
+    const report = { hiddenPatched: false, focusPatched: false, eventsKilled: [] };
+    if (!win) return report;
+    let d = null;
+    try { d = win.document; } catch (e) { return report; }
+    if (!d) return report;
+
+    const asFalse = { get: () => false, configurable: true };
+    const asVisible = { get: () => "visible", configurable: true };
+    ["hidden", "webkitHidden", "msHidden"].forEach((p) => {
+      try { Object.defineProperty(d, p, asFalse); report.hiddenPatched = true; } catch (e) {}
+    });
+    ["visibilityState", "webkitVisibilityState", "msVisibilityState"].forEach((p) => {
+      try { Object.defineProperty(d, p, asVisible); } catch (e) {}
+    });
+    try { d.hasFocus = function () { return true; }; report.focusPatched = true; } catch (e) {}
+
+    const kill = function (e) { try { e.stopImmediatePropagation(); } catch (err) {} };
+    ["visibilitychange", "webkitvisibilitychange", "blur", "focusout", "pagehide", "freeze"].forEach(function (t) {
+      try { win.addEventListener(t, kill, true); report.eventsKilled.push(t); } catch (e) {}
+      try { d.addEventListener(t, kill, true); } catch (e) {}
+    });
+    return report;
   };
 
   // 缓存管理：__cxCacheStat() 看命中规模；__cxClearCache() 清空
@@ -2646,6 +2681,41 @@
       );
 
       try { player.play(); } catch (e) { this.askStore.log("play() 异常：" + (e && e.message ? e.message : e), "error"); }
+
+      // ── 后台 / 小窗保持播放 ────────────────────────────────────────
+      const keepAlive = cfg.videoKeepAlive !== false;
+      if (keepAlive) {
+        try {
+          const rep = maskVisibility(iframeWindow);
+          const vid = iframeWindow.document.getElementById("video_html5_api");
+          let fixes = 0;
+          if (vid && vid.addEventListener) {
+            // 媒体时钟驱动：后台仍会触发，且不需要定时器
+            vid.addEventListener("timeupdate", () => {
+              try {
+                if (vid.paused && !vid.ended && isFinite(vid.duration) && vid.currentTime < vid.duration - 0.5) {
+                  fixes++;
+                  const pr = player.play();
+                  if (pr && pr.catch) pr.catch(() => {});
+                  if (fixes === 1 || fixes % 20 === 0) {
+                    this.askStore.log("检测到被外部暂停，已恢复播放（第 " + fixes + " 次）", "info");
+                  }
+                }
+              } catch (e) {}
+            });
+            this.askStore.log(
+              "后台保持播放已启用：可见性伪装=" + (rep.hiddenPatched ? "是" : "否") +
+              " / hasFocus 伪装=" + (rep.focusPatched ? "是" : "否") +
+              " / 拦截事件 " + rep.eventsKilled.length + " 个；切标签页、最小化、画中画都不再暂停",
+              "success"
+            );
+          } else {
+            this.askStore.log("可见性已伪装，但未找到 video 元素，恢复逻辑只剩主循环（后台会被节流）", "info");
+          }
+        } catch (e) {
+          this.askStore.log("后台保持播放安装失败：" + (e && e.message ? e.message : e), "error");
+        }
+      }
 
       await new Promise((resolve) => {
         const t0 = Date.now();
