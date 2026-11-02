@@ -16,6 +16,11 @@
 
 ---
 
+## [1.2.14] - 2026-11-02
+
+- README 增加致谢区与 Powered by DeepSeek 徽章，声明面板标注 AI 能力来源
+- build: `1.2.14-20261102d`
+
 ## [1.2.13] - 2026-11-02
 
 - 重写 README，补齐 @homepageURL/@supportURL，声明面板显示构建号

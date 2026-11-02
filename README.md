@@ -7,6 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.2.13-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Tampermonkey-FF8000.svg)](https://www.tampermonkey.net/)
 [![Upstream](https://img.shields.io/badge/upstream-March--OwO-lightgrey.svg)](https://github.com/March-OwO/Xuexitong-LLM-Assistant)
+[![Powered by DeepSeek](https://img.shields.io/badge/AI%20powered%20by-DeepSeek-4D6BFE.svg)](https://www.deepseek.com)
 
 > **本仓库是 [March-OwO/Xuexitong-LLM-Assistant](https://github.com/March-OwO/Xuexitong-LLM-Assistant) 的自维护分支**，
 > 基于上游 `1.2.9` 继续迭代。重点解决两件事：
@@ -208,6 +209,11 @@ Key: 已填 51 位，前缀 sk-xxxx…
 
 **依赖库加载失败？** 脚本依赖 `cdn.staticfile.org` 上的 Vue / ElementPlus / jQuery，该 CDN 不通会导致脚本整体不运行。
 
+**以上都试过仍有问题？** 提 [Issue](https://github.com/Phiedeir/Xuexitong-LLM-Assistant/issues) 时附上两样东西，能省掉好几个来回：
+
+1. 点「诊断」后的完整输出
+2. 点「抓现场」导出的 DOM 快照（题干文字可以抹掉，我只需要结构）
+
 ---
 
 ## 开发与发版
@@ -252,6 +258,20 @@ Tampermonkey 靠 `@version` 判断更新，必须严格递增。`bump.mjs` 会�
 - 不收集、不上传学习账号信息
 - 所有网络请求只指向你配置的 AI 端点，全程 HTTPS
 - 代码完全开源，可自行审计，无广告无追踪
+
+---
+
+## 致谢
+
+| 角色 | 对象 |
+|---|---|
+| **原始脚本** | [March-OwO/Xuexitong-LLM-Assistant](https://github.com/March-OwO/Xuexitong-LLM-Assistant)，本仓库基于其 `1.2.9` 继续维护 |
+| **AI 能力** | [DeepSeek](https://www.deepseek.com) —— 默认接入 `deepseek-chat`；同时兼容任何 OpenAI 协议端点，可自行替换 |
+| **前端依赖** | [Vue 3](https://vuejs.org/)、[Element Plus](https://element-plus.org/)、[Pinia](https://pinia.vuejs.org/)、[jQuery](https://jquery.com/)、[Typr](https://github.com/photopea/Typr.js)（字体解析）、[blueimp-md5](https://github.com/blueimp/JavaScript-MD5) |
+| **字体映射表** | [forestpolice.org](https://www.forestpolice.org/ttf/2.0/table.json)，用于还原学习通 `font-cxsecret` 混淆字体 |
+
+> 本项目代码由 [Phiedeir](https://github.com/Phiedeir) 维护。GitHub 的 `Contributors` 面板只统计**个人账号**，
+> DeepSeek 是组织账号（`deepseek`，type=Organization），无法列在那里，故以本节与顶部徽章标注。
 
 ---
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通AI学习助手
 // @namespace    https://github.com/Phiedeir/Xuexitong-LLM-Assistant
-// @version      1.2.13
+// @version      1.2.14
 // @author       Phiedeir（基于 March-OwO 的 1.2.9 维护）
 // @description  学习通AI答题助手：全题型 AI 作答、任务点自动跳转、视频文档全自动。支持任意 OpenAI 兼容端点，自动适配推理模型（gpt-5/6 系、o 系），内置免 F12 诊断面板。
 // @homepageURL  https://github.com/Phiedeir/Xuexitong-LLM-Assistant
@@ -78,7 +78,7 @@
     } catch (e) {}
   })();
 
-  const CX_BUILD = "1.2.13-20261102c";
+  const CX_BUILD = "1.2.14-20261102d";
 
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -2556,7 +2556,7 @@
   } } });
 
   const _sfc_main = vue.defineComponent({ setup() {
-    const askstore = useAskStore(), { dialogVisible, count, questionList, task } = pinia$1.storeToRefs(askstore), askActiveName = vue.ref("first"), askActiveNames = vue.ref(["1"]), msg = vue.ref("<h3>本脚本仅用于学习交流，请 24h 内删除。</h3><br><p style='color:red;'>禁止用于各种非法用途，否则后果自负！</p><br><p>答案由 AI 大语言模型生成，准确率不保证 100%，请自行判断、评估是否使用。</p><br><p style='font-size:13px;color:#888;'>构建：" + CX_BUILD + "<br><b>本平台禁用了 F12，排查请点页面右侧「诊断」按钮</b>，结果会写进「运行日志」标签页，再点「复制日志」导出。<br><a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant' target='_blank' style='color:#409eff;text-decoration:none;'>GitHub 仓库</a> · <a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant/blob/main/CHANGELOG.md' target='_blank' style='color:#409eff;text-decoration:none;'>更新日志</a></p>"), formstoreObj = useformStore(), { forminput, dialogV, activeName } = pinia$1.storeToRefs(formstoreObj), ruleFormRef = vue.ref(), rules = vue.reactive({
+    const askstore = useAskStore(), { dialogVisible, count, questionList, task } = pinia$1.storeToRefs(askstore), askActiveName = vue.ref("first"), askActiveNames = vue.ref(["1"]), msg = vue.ref("<h3>本脚本仅用于学习交流，请 24h 内删除。</h3><br><p style='color:red;'>禁止用于各种非法用途，否则后果自负！</p><br><p>答案由 AI 大语言模型生成，准确率不保证 100%，请自行判断、评估是否使用。</p><br><p style='font-size:13px;color:#888;'>构建：" + CX_BUILD + "<br>AI 能力由 <a href='https://www.deepseek.com' target='_blank' style='color:#409eff;text-decoration:none;'>DeepSeek</a> 等大模型提供 · 原脚本 by <a href='https://github.com/March-OwO/Xuexitong-LLM-Assistant' target='_blank' style='color:#409eff;text-decoration:none;'>March-OwO</a><br><b>本平台禁用了 F12，排查请点页面右侧「诊断」按钮</b>，结果会写进「运行日志」标签页，再点「复制日志」导出。<br><a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant' target='_blank' style='color:#409eff;text-decoration:none;'>GitHub 仓库</a> · <a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant/blob/main/CHANGELOG.md' target='_blank' style='color:#409eff;text-decoration:none;'>更新日志</a> · <a href='https://github.com/Phiedeir/Xuexitong-LLM-Assistant/issues' target='_blank' style='color:#409eff;text-decoration:none;'>反馈</a></p>"), formstoreObj = useformStore(), { forminput, dialogV, activeName } = pinia$1.storeToRefs(formstoreObj), ruleFormRef = vue.ref(), rules = vue.reactive({
       interval: [{ required: true, message: "间隔时间不能为空" }, { type: "number", message: "间隔时间必须为数字" }, { validator: (rule, value) => value >= 0.1 ? Promise.resolve() : Promise.reject("间隔时间必须大于等于0.1") }],
       answerInterval: [{ required: true, message: "答题间隔不能为空" }, { type: "number", message: "答题间隔必须为数字" }, { validator: (rule, value) => value >= 0.1 ? Promise.resolve() : Promise.reject("答题间隔必须大于等于0.1") }],
       thtoken: [{ validator: (rule, value) => { if (value && /[\s\u4e00-\u9fa5]/.test(value)) return Promise.reject("API Key 里含空格/换行/中文，请重新粘贴"); return Promise.resolve(); } }]
