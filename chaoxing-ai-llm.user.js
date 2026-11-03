@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通AI学习助手
 // @namespace    https://github.com/Phiedeir/Xuexitong-LLM-Assistant
-// @version      2.1.0
+// @version      2.4.0
 // @author       Phiedeir（基于 March-OwO 的 1.2.9 维护）
 // @description  学习通AI答题助手：全题型 AI 作答、任务点自动跳转、视频文档全自动。支持任意 OpenAI 兼容端点，自动适配推理模型（gpt-5/6 系、o 系），内置免 F12 诊断面板。
 // @homepageURL  https://github.com/Phiedeir/Xuexitong-LLM-Assistant
@@ -78,7 +78,7 @@
     } catch (e) {}
   })();
 
-  const CX_BUILD = "2.1.0-20261102f";
+  const CX_BUILD = "2.4.0-20261103d";
 
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -897,6 +897,287 @@
   };
   try { _unsafeWindow.__cxSnap = cxSnapshot; } catch (e) {}
 
+  // ══ MD3 UI 层 ═══════════════════════════════════════════════════════════
+  // 设计语言按 Material Design 3：tonal palette + 16/28px 圆角 + 三级 elevation
+  // + 标准缓动 cubic-bezier(.2,0,0,1)。所有选择器带 !important 以覆盖 Element Plus。
+  const CX_UI_CSS = [
+    ":root{",
+    "--md-primary:#0061A4;--md-on-primary:#FFFFFF;",
+    "--md-primary-container:#D1E4FF;--md-on-primary-container:#001D36;",
+    "--md-secondary:#535F70;--md-secondary-container:#D7E3F7;--md-on-secondary-container:#101C2B;",
+    "--md-surface:#FAF9FD;--md-surface-2:#EFEEF4;--md-surface-3:#E9E7EF;",
+    "--md-on-surface:#1A1C1E;--md-surface-variant:#DFE2EB;--md-on-surface-variant:#43474E;",
+    "--md-outline:#73777F;--md-outline-variant:#C3C7CF;",
+    "--md-error:#BA1A1A;--md-error-container:#FFDAD6;--md-on-error-container:#410002;",
+    "--md-e1:0 1px 2px rgba(0,0,0,.30),0 1px 3px 1px rgba(0,0,0,.15);",
+    "--md-e2:0 1px 2px rgba(0,0,0,.30),0 2px 6px 2px rgba(0,0,0,.15);",
+    "--md-e3:0 4px 8px 3px rgba(0,0,0,.15),0 1px 3px rgba(0,0,0,.30);",
+    "--md-ease:cubic-bezier(.2,0,0,1);",
+    "--md-r-sm:8px;--md-r-md:12px;--md-r-lg:16px;--md-r-xl:28px;",
+    "--md-font:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',Roboto,sans-serif;",
+    "--md-mono:ui-monospace,'Cascadia Mono',Consolas,'Courier New',monospace",
+    "}",
+
+    /* 隐藏旧入口，统一由 FAB 接管 */
+    "#cx-tools{display:none!important}",
+    "#csbutton[data-v-6ed29f7f],#csbutton[data-v-c3c6b09f]{display:none!important}",
+    "#zeokdjg{display:none!important}",
+
+    /* ── FAB ── */
+    "#cx-fab{position:fixed;right:20px;bottom:20px;z-index:100001;width:56px;height:56px;",
+    "border-radius:16px;border:0;padding:0;cursor:pointer;",
+    "background:var(--md-primary-container);color:var(--md-on-primary-container);",
+    "box-shadow:var(--md-e2);display:flex;align-items:center;justify-content:center;",
+    "font:600 15px/1 var(--md-font);letter-spacing:.5px;",
+    "transition:border-radius .25s var(--md-ease),background .25s var(--md-ease),box-shadow .25s var(--md-ease),transform .25s var(--md-ease);",
+    "-webkit-tap-highlight-color:transparent;user-select:none}",
+    "#cx-fab:hover{box-shadow:var(--md-e3)}",
+    "#cx-fab:active{transform:scale(.94)}",
+    "#cx-fab.is-active{background:var(--md-primary);color:var(--md-on-primary);border-radius:16px}",
+    "#cx-fab.has-alert::after{content:'';position:absolute;top:9px;right:9px;width:8px;height:8px;",
+    "border-radius:50%;background:var(--md-error);box-shadow:0 0 0 2px var(--md-primary-container)}",
+
+    /* ── 自绘面板（MD3，可缩放） ── */
+    "#cx-panel{position:fixed;z-index:100002;width:560px;height:620px;",
+    "display:none;flex-direction:column;background:var(--md-surface);",
+    "border:1px solid var(--md-outline-variant);border-radius:var(--md-r-xl);",
+    "box-shadow:var(--md-e3);overflow:hidden;font-family:var(--md-font);",
+    "color:var(--md-on-surface);min-width:340px;min-height:260px;",
+    "transition:box-shadow .2s var(--md-ease)}",
+    "#cx-panel.is-shown{display:flex}",
+    "#cx-panel.is-dragging,#cx-panel.is-resizing{transition:none!important}",
+
+    ".cx-panel-bar{display:flex;align-items:center;gap:8px;padding:16px 12px 10px 22px;",
+    "cursor:move;user-select:none;flex:0 0 auto}",
+    ".cx-panel-title{flex:1;font:500 17px/1.4 var(--md-font);letter-spacing:.1px;",
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".cx-panel-x{width:36px;height:36px;flex:0 0 36px;border:0;border-radius:50%;",
+    "background:transparent;color:var(--md-on-surface-variant);cursor:pointer;",
+    "font:400 19px/1 var(--md-font);display:flex;align-items:center;justify-content:center;",
+    "transition:background .15s var(--md-ease),transform .1s var(--md-ease)}",
+    ".cx-panel-x:hover{background:var(--md-surface-3)}",
+    ".cx-panel-x:active{transform:scale(.92)}",
+
+    ".cx-panel-tabs{display:flex;gap:0;padding:0 14px;flex:0 0 auto;",
+    "border-bottom:1px solid var(--md-outline-variant);overflow-x:auto;scrollbar-width:none}",
+    ".cx-panel-tabs::-webkit-scrollbar{display:none}",
+    ".cx-tab{position:relative;padding:11px 15px 13px;border:0;background:transparent;",
+    "cursor:pointer;font:500 13.5px/1 var(--md-font);color:var(--md-on-surface-variant);",
+    "white-space:nowrap;border-radius:8px 8px 0 0;",
+    "transition:color .15s var(--md-ease),background .15s var(--md-ease)}",
+    ".cx-tab:hover{color:var(--md-on-surface);background:var(--md-surface-2)}",
+    ".cx-tab.is-active{color:var(--md-primary)}",
+    ".cx-tab.is-active::after{content:'';position:absolute;left:15px;right:15px;bottom:-1px;",
+    "height:3px;border-radius:3px 3px 0 0;background:var(--md-primary)}",
+
+    ".cx-panel-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:16px 22px 22px;",
+    "scrollbar-width:thin}",
+    ".cx-pane{display:none}",
+    ".cx-pane.is-active{display:block}",
+
+    ".cx-grip{position:absolute;right:0;bottom:0;width:28px;height:28px;cursor:nwse-resize;",
+    "z-index:4;opacity:.5;transition:opacity .15s var(--md-ease);",
+    "background:",
+    "linear-gradient(135deg,transparent 0 40%,var(--md-outline) 40% 48%,transparent 48%),",
+    "linear-gradient(135deg,transparent 0 58%,var(--md-outline) 58% 66%,transparent 66%),",
+    "linear-gradient(135deg,transparent 0 76%,var(--md-outline) 76% 84%,transparent 84%)}",
+    ".cx-grip:hover{opacity:1}",
+
+    ".cx-kv{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--md-outline-variant);font-size:13px}",
+    ".cx-kv:last-child{border-bottom:0}",
+    ".cx-kv b{flex:0 0 76px;font-weight:500;color:var(--md-on-surface-variant)}",
+    ".cx-kv span{flex:1;color:var(--md-on-surface);word-break:break-word}",
+
+    ".cx-log-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;",
+    "padding-bottom:10px;border-bottom:1px solid var(--md-outline-variant)}",
+    ".cx-log-line{display:flex;gap:8px;font:11.5px/1.7 var(--md-mono);padding:2px 5px;",
+    "border-radius:4px;cursor:pointer;transition:background .12s var(--md-ease)}",
+    ".cx-log-line:hover{background:var(--md-surface-2)}",
+    ".cx-log-line .t{flex:0 0 auto;color:var(--md-outline)}",
+    ".cx-log-line .m{flex:1;white-space:pre-wrap;word-break:break-word;color:var(--md-on-surface)}",
+    ".cx-log-line.lv-success .m{color:#1F6E3C}",
+    ".cx-log-line.lv-error .m{color:var(--md-error)}",
+
+    ".cx-field{margin-bottom:15px}",
+    ".cx-field-label{font:500 13px/1.4 var(--md-font);margin-bottom:5px}",
+    ".cx-field-desc{font:400 11.5px/1.5 var(--md-font);color:var(--md-on-surface-variant);margin-top:5px}",
+    /* MD3 filled text field：浅底 + 底边线，聚焦时底边加粗变主色 */
+    ".cx-input{width:100%;height:44px;padding:0 14px;box-sizing:border-box;",
+    "border:0;border-bottom:1px solid var(--md-outline);",
+    "border-radius:var(--md-r-sm) var(--md-r-sm) 0 0;",
+    "background:var(--md-surface-2);color:var(--md-on-surface);",
+    "font:400 13px/1 var(--md-mono);outline:none;",
+    "transition:border-color .15s var(--md-ease),background .15s var(--md-ease)}",
+    ".cx-input:hover{background:var(--md-surface-3)}",
+    ".cx-input:focus{border-bottom:2px solid var(--md-primary);background:var(--md-surface-3)}",
+
+    ".cx-switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer}",
+    ".cx-switch input{position:absolute;opacity:0;width:0;height:0}",
+    ".cx-switch .track{position:relative;width:48px;height:28px;flex:0 0 48px;border-radius:14px;",
+    "background:var(--md-surface-variant);border:2px solid var(--md-outline);box-sizing:border-box;",
+    "transition:background .2s var(--md-ease),border-color .2s var(--md-ease)}",
+    ".cx-switch .thumb{position:absolute;top:50%;left:3px;width:16px;height:16px;border-radius:50%;",
+    "background:var(--md-outline);transform:translateY(-50%);",
+    "transition:left .2s var(--md-ease),width .2s var(--md-ease),height .2s var(--md-ease),background .2s var(--md-ease)}",
+    ".cx-switch input:checked + .track{background:var(--md-primary);border-color:var(--md-primary)}",
+    ".cx-switch input:checked + .track .thumb{left:22px;width:22px;height:22px;background:var(--md-on-primary)}",
+    ".cx-switch:hover .track{border-color:var(--md-on-surface-variant)}",
+
+    ".cx-group{margin-bottom:22px}",
+    ".cx-group-title{font:600 11.5px/1 var(--md-font);color:var(--md-primary);",
+    "letter-spacing:.7px;margin-bottom:12px}",
+
+    ".cx-btn{height:40px;padding:0 22px;border-radius:20px;border:1px solid transparent;",
+    "background:var(--md-primary);color:var(--md-on-primary);cursor:pointer;",
+    "font:500 13.5px/1 var(--md-font);box-shadow:var(--md-e1);",
+    "transition:background .15s var(--md-ease),transform .1s var(--md-ease),box-shadow .15s var(--md-ease),border-color .15s var(--md-ease)}",
+    ".cx-btn:hover{box-shadow:var(--md-e2)}",
+    ".cx-btn:active{transform:scale(.97)}",
+    ".cx-btn.ghost{background:transparent;color:var(--md-primary);border-color:var(--md-outline);box-shadow:none}",
+    ".cx-btn.ghost:hover{background:var(--md-primary-container);color:var(--md-on-primary-container);box-shadow:none}",
+    ".cx-btn.danger{background:transparent;color:var(--md-error);border-color:var(--md-error);box-shadow:none}",
+    ".cx-btn.danger:hover{background:var(--md-error-container)}",
+    ".cx-btn.armed{background:var(--md-error-container);color:var(--md-on-error-container);",
+    "border-color:var(--md-error);font-weight:600}",
+    ".cx-btn.sm{height:32px;padding:0 14px;font-size:12.5px;border-radius:16px}",
+    ".cx-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
+    ".cx-empty{padding:28px 0;text-align:center;color:var(--md-on-surface-variant);",
+    "font:400 13px/1.6 var(--md-font)}",
+    ".cx-hint{font:400 12px/1.6 var(--md-font);color:var(--md-on-surface-variant);margin-top:10px}",
+    ".cx-sep{height:1px;background:var(--md-outline-variant);margin:16px 0}",
+
+    /* MD3 Snackbar：操作反馈 */
+    ".cx-snackbar{position:fixed;left:50%;bottom:28px;transform:translate(-50%,16px);",
+    "z-index:100005;padding:12px 18px;border-radius:var(--md-r-sm);",
+    "background:#2E3135;color:#F3F3F9;box-shadow:var(--md-e2);",
+    "font:500 13px/1.45 var(--md-font);opacity:0;pointer-events:none;",
+    "transition:opacity .2s var(--md-ease),transform .2s var(--md-ease);",
+    "max-width:min(440px,88vw);word-break:break-word}",
+    ".cx-snackbar.is-shown{opacity:1;transform:translate(-50%,0)}",
+    ".cx-snackbar.is-error{background:#8C1D18;color:#FFDAD6}",
+
+    /* ── 状态 chip：放在 FAB 正上方，避开工具条所在的那一行 ── */
+    "#cx-status{position:fixed;right:20px;bottom:88px;z-index:99999;max-width:min(320px,42vw);",
+    "padding:6px 12px;border-radius:var(--md-r-sm);background:var(--md-surface-variant);",
+    "color:var(--md-on-surface-variant);font:500 12px/1.45 var(--md-font);box-shadow:var(--md-e1);",
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;pointer-events:none;",
+    "text-align:right}",
+    "#cx-status.is-shown{display:block}",
+
+    /* ── Dialog（MD3 大圆角 + 无遮罩） ── */
+    ".el-overlay{background:transparent!important}",
+    ".el-dialog{border-radius:var(--md-r-xl)!important;box-shadow:var(--md-e3)!important;",
+    "padding:0!important;overflow:hidden!important;background:var(--md-surface)!important;",
+    "border:1px solid var(--md-outline-variant)!important;margin:0 auto!important}",
+    ".el-dialog__header{padding:24px 24px 4px!important;margin:0!important}",
+    ".el-dialog__title{font:500 19px/1.4 var(--md-font)!important;color:var(--md-on-surface)!important;letter-spacing:.1px}",
+    ".el-dialog__headerbtn{top:18px!important;right:18px!important;border-radius:50%!important;width:32px!important;height:32px!important}",
+    ".el-dialog__headerbtn:hover{background:var(--md-surface-2)!important}",
+    ".el-dialog__body{padding:10px 24px 10px!important;color:var(--md-on-surface)!important}",
+    ".el-dialog__footer{padding:6px 24px 20px!important}",
+    ".dialog-footer button:first-child{margin-right:10px}",
+
+    /* ── Tabs → MD3 secondary tabs ── */
+    ".el-tabs__header{margin-bottom:12px!important}",
+    ".el-tabs__nav-wrap::after{height:1px!important;background:var(--md-outline-variant)!important}",
+    ".el-tabs__item{font:500 14px/1 var(--md-font)!important;color:var(--md-on-surface-variant)!important;height:44px!important}",
+    ".el-tabs__item.is-active{color:var(--md-primary)!important}",
+    ".el-tabs__active-bar{height:3px!important;border-radius:3px 3px 0 0!important;background:var(--md-primary)!important}",
+    ".demo-tabs .el-tabs__nav-wrap::after{display:none!important}",
+    ".demo-tabs .el-tabs__nav{display:flex!important;justify-content:space-evenly!important}",
+    ".demo-tabs .el-tabs__item{flex:1;text-align:center;padding:0 8px!important}",
+
+    /* ── Buttons → MD3 filled / tonal / text ── */
+    ".el-button{border-radius:20px!important;height:40px!important;padding:0 20px!important;",
+    "font:500 14px/1 var(--md-font)!important;transition:background .15s var(--md-ease),box-shadow .15s var(--md-ease)!important}",
+    ".el-button--primary{background:var(--md-primary)!important;border-color:var(--md-primary)!important;",
+    "color:var(--md-on-primary)!important;box-shadow:var(--md-e1)!important}",
+    ".el-button--primary:hover,.el-button--primary:focus{background:#00497D!important;border-color:#00497D!important;",
+    "color:var(--md-on-primary)!important;box-shadow:var(--md-e2)!important}",
+    ".el-button--primary.is-plain{background:transparent!important;border-color:var(--md-outline)!important;",
+    "color:var(--md-primary)!important;box-shadow:none!important}",
+    ".el-button--primary.is-plain:hover{background:var(--md-primary-container)!important;color:var(--md-on-primary-container)!important}",
+
+    /* ── 输入 / 开关 / 卡片 ── */
+    ".el-input__wrapper{border-radius:var(--md-r-sm)!important;box-shadow:0 0 0 1px var(--md-outline)!important;",
+    "background:var(--md-surface)!important;padding:2px 12px!important}",
+    ".el-input__wrapper.is-focus{box-shadow:0 0 0 2px var(--md-primary)!important}",
+    ".el-switch.is-checked .el-switch__core{background:var(--md-primary)!important;border-color:var(--md-primary)!important}",
+    ".el-card{border-radius:var(--md-r-md)!important;box-shadow:var(--md-e1)!important;border:1px solid var(--md-outline-variant)!important}",
+    ".el-tag{border-radius:var(--md-r-sm)!important;font-family:var(--md-font)!important}",
+    ".el-divider--horizontal{margin:12px 0!important;border-color:var(--md-outline-variant)!important}",
+
+    /* ── 日志区：等宽 + 舒适行高 ── */
+    ".cx_log{margin:0 0 4px!important;display:flex;gap:8px;align-items:flex-start;",
+    "font-family:var(--md-mono)!important;font-size:11.5px!important;line-height:1.6!important}",
+    ".cx_log .el-text{font-family:inherit!important}",
+
+    /* ── 题目 / 按钮网格 ── */
+    ".question_btn{width:40px!important;height:40px!important;border-radius:var(--md-r-sm)!important;margin:4px!important}",
+    ".question_div{height:200px}",
+    ".question_ti{margin:10px 0 18px}",
+    ".el-empty__image{display:none}",
+    ".el-empty::before{content:'';display:block;width:32px;height:32px;margin:0 auto 8px;",
+    "border:2px solid var(--md-primary-container);border-top-color:var(--md-primary);",
+    "border-radius:50%;animation:cx-spin 1.5s linear infinite}",
+    "@keyframes cx-spin{to{transform:rotate(360deg)}}",
+
+    /* ── 文本框浮层（MD3） ── */
+    "#cx-textbox{position:fixed;inset:0;z-index:100002;background:rgba(0,0,0,.32);",
+    "display:flex;align-items:center;justify-content:center}",
+    "#cx-textbox .cx-tb-panel{width:min(920px,88vw);height:min(72vh,660px);background:var(--md-surface);",
+    "border-radius:var(--md-r-xl);box-shadow:var(--md-e3);display:flex;flex-direction:column;padding:20px;gap:12px}",
+    "#cx-textbox textarea{flex:1;width:100%;font:12px/1.6 var(--md-mono);color:var(--md-on-surface);",
+    "background:var(--md-surface-2);border:1px solid var(--md-outline-variant);",
+    "border-radius:var(--md-r-md);padding:12px;resize:none;box-sizing:border-box;outline:none}",
+    "#cx-textbox .cx-tb-bar{display:flex;gap:8px;justify-content:flex-end}",
+
+    /* 暗色 */
+    "@media (prefers-color-scheme:dark){",
+    ":root{--md-primary:#9ECAFF;--md-on-primary:#003258;--md-primary-container:#00497D;--md-on-primary-container:#D1E4FF;",
+    "--md-surface:#111318;--md-surface-2:#1B1E24;--md-surface-3:#23262D;--md-on-surface:#E2E2E9;",
+    "--md-surface-variant:#3F444B;--md-on-surface-variant:#C3C7CF;",
+    "--md-outline:#8D9199;--md-outline-variant:#3F444B;",
+    "--md-error:#FFB4AB;--md-error-container:#93000A;--md-on-error-container:#FFDAD6;",
+    "--md-secondary-container:#3B4858;--md-on-secondary-container:#D7E3F7}",
+    "}"
+  ].join("");
+
+  let _uiCssDone = false;
+  const ensureUiCss = () => {
+    if (_uiCssDone) return;
+    _uiCssDone = true;
+    try { GM_addStyle(CX_UI_CSS); } catch (e) { console.log("[UI] 样式注入失败:", e); }
+  };
+
+  // 日志自动跟随：MutationObserver 触发（后台也走，不受定时器节流）。
+  // 用户手动往上翻时暂停跟随，滚回底部自动恢复。
+  const bindLogFollow = (doc) => {
+    let userUp = false, queued = false;
+    const tick = () => {
+      queued = false;
+      try {
+        doc.querySelectorAll(".el-scrollbar__wrap").forEach((w) => {
+          if (!w.querySelector(".cx_log")) return;
+          if (!w.dataset.cxBound) {
+            w.dataset.cxBound = "1";
+            w.addEventListener("scroll", () => {
+              userUp = (w.scrollHeight - w.scrollTop - w.clientHeight) > 48;
+            }, { passive: true });
+          }
+          if (!userUp) w.scrollTop = w.scrollHeight;
+        });
+      } catch (e) {}
+    };
+    const mo = new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(tick);
+    });
+    try { mo.observe(doc.body, { childList: true, subtree: true }); } catch (e) {}
+    return { stop: () => mo.disconnect(), tick };
+  };
+
   // ── 页面内诊断面板：不依赖 F12 ────────────────────────────────────────
   const cxShowText = (doc, text) => {
     try {
@@ -904,75 +1185,609 @@
       if (old) old.remove();
       const mask = doc.createElement("div");
       mask.id = "cx-textbox";
-      mask.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center";
       const wrap = doc.createElement("div");
-      wrap.style.cssText = "width:min(920px,88vw);height:min(72vh,660px);background:#fff;border-radius:10px;display:flex;flex-direction:column;padding:12px;gap:8px;box-shadow:0 12px 40px rgba(0,0,0,.3)";
+      wrap.className = "cx-tb-panel";
       const ta = doc.createElement("textarea");
       ta.value = text;
-      ta.style.cssText = "flex:1;width:100%;font:12px/1.55 Consolas,Menlo,monospace;border:1px solid #ddd;border-radius:6px;padding:8px;resize:none;box-sizing:border-box";
+      ta.readOnly = true;
       const bar = doc.createElement("div");
-      bar.style.cssText = "display:flex;gap:8px;justify-content:flex-end";
+      bar.className = "cx-tb-bar";
       const cp = doc.createElement("button");
+      cp.type = "button";
+      cp.className = "el-button el-button--primary";
       cp.textContent = "全选复制";
-      cp.style.cssText = "padding:6px 14px;border-radius:6px;border:1px solid #409eff;background:#409eff;color:#fff;cursor:pointer";
       cp.onclick = () => { ta.focus(); ta.select(); try { doc.execCommand("copy"); } catch (e) {} };
       const cl = doc.createElement("button");
+      cl.type = "button";
+      cl.className = "el-button";
       cl.textContent = "关闭";
-      cl.style.cssText = "padding:6px 14px;border-radius:6px;border:1px solid #ccc;background:#fff;cursor:pointer";
+      cl.style.background = "transparent";
+      cl.style.border = "1px solid var(--md-outline)";
       cl.onclick = () => mask.remove();
       bar.appendChild(cp); bar.appendChild(cl);
       wrap.appendChild(ta); wrap.appendChild(bar); mask.appendChild(wrap);
       doc.body.appendChild(mask);
       ta.focus(); ta.select();
-    } catch (e) { console.log("[诊断UI] 浮层创建失败:", e); }
+    } catch (e) { console.log("[UI] 浮层创建失败:", e); }
   };
 
+  // ── 自绘 UI：一个面板装下全部功能 ────────────────────────────────────
+  // 原脚本把「运行框」和「配置」做成两个独立 el-dialog，由 Vue 组件的
+  // dialogVisible / dialogV 控制，位置和层级都不受控（draggable 累加 transform
+  // 会越拖越偏），而且 dialogVisible 初始就是 true —— 一进页面就弹窗。
+  // 这里改为完全自绘：一个可拖面板 + 五个 tab，配置直接读写 GM 存储，
+  // 运行状态从 askStore 轮询。原 dialog 按标题识别后整体隐藏（display:none），
+  // 只保留它们的数据层（askStore 与 getConfig 仍在用）。
   const injectDiagUI = (askStore) => {
     try {
       const W = _unsafeWindow;
       const doc = (W.top && W.top.document) ? W.top.document : document;
-      if (doc.getElementById("cx-tools")) return;
-      GM_addStyle("#cx-tools{position:fixed;right:20px;bottom:80px;z-index:99998;display:flex;flex-direction:column;gap:6px;font:12px/1.4 -apple-system,'Microsoft YaHei',sans-serif}#cx-tools button{cursor:pointer;border:1px solid rgba(64,158,255,.5);background:rgba(64,158,255,.18);color:#409eff;border-radius:6px;padding:5px 10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:all .2s}#cx-tools button:hover{background:rgba(64,158,255,.34);color:#fff}");
-      const box = doc.createElement("div");
-      box.id = "cx-tools";
-      const mk = (label, fn) => { const b = doc.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = fn; return b; };
-      const push = (level, text) => { if (askStore) { try { askStore.log(text, level); } catch (e) {} } };
+      ensureUiCss();
+      if (doc.getElementById("cx-panel")) return;
 
-      box.appendChild(mk("诊断", async () => {
-        if (askStore) { try { askStore.task.log.length = 0; askStore.dialogVisible = true; askStore.task.name = "诊断中"; } catch (e) {} }
-        push("info", "===== 诊断开始 =====");
-        try { await cxDiag(push); } catch (e) { push("error", "诊断异常：" + (e && e.message ? e.message : e)); }
-        push("success", "===== 诊断结束，点「复制日志」可整段导出 =====");
-      }));
-      box.appendChild(mk("复制日志", () => {
-        let text = "";
-        try { text = (askStore ? askStore.task.log : []).map((i) => i.time + " " + i.msg).join("\n"); } catch (e) {}
-        if (!text) text = "(暂无日志)";
+      const push = (level, text) => { if (askStore) { try { askStore.log(text, level); } catch (e) {} } };
+      const el = (tag, cls, txt) => {
+        const n = doc.createElement(tag);
+        if (cls) n.className = cls;
+        if (txt != null) n.textContent = txt;
+        return n;
+      };
+
+      // ══ 骨架 ══
+      const panel = doc.createElement("div");
+      panel.id = "cx-panel";
+
+      const bar = el("div", "cx-panel-bar");
+      const titleEl = el("div", "cx-panel-title", "学习通AI学习助手");
+      const xBtn = el("button", "cx-panel-x", "\u00d7");
+      xBtn.type = "button";
+      bar.appendChild(titleEl);
+      bar.appendChild(xBtn);
+
+      const tabsEl = el("div", "cx-panel-tabs");
+      const bodyEl = el("div", "cx-panel-body");
+
+      const TABS = [
+        { id: "run", label: "运行" },
+        { id: "log", label: "日志" },
+        { id: "cfg", label: "配置" },
+        { id: "tool", label: "工具" },
+        { id: "msg", label: "声明" }
+      ];
+      const panes = {};
+      TABS.forEach((t) => {
+        const b = el("button", "cx-tab", t.label);
+        b.type = "button";
+        b.dataset.tab = t.id;
+        tabsEl.appendChild(b);
+        const p = el("div", "cx-pane");
+        p.dataset.pane = t.id;
+        bodyEl.appendChild(p);
+        panes[t.id] = p;
+      });
+
+      panel.appendChild(bar);
+      panel.appendChild(tabsEl);
+      panel.appendChild(bodyEl);
+
+      // 右下角缩放把手
+      const grip = el("div", "cx-grip");
+      grip.title = "拖动调整窗口大小";
+      panel.appendChild(grip);
+
+      // MD3 Snackbar：操作反馈（复制成功 / 失败等）
+      const snack = el("div", "cx-snackbar");
+      let snackTimer = 0;
+      const toast = (msg, isErr) => {
+        try {
+          snack.textContent = msg;
+          snack.classList.toggle("is-error", !!isErr);
+          snack.classList.add("is-shown");
+          clearTimeout(snackTimer);
+          snackTimer = setTimeout(() => snack.classList.remove("is-shown"), 2200);
+        } catch (e) {}
+      };
+
+      // 统一的复制入口：优先剪贴板，失败弹文本框兜底
+      const copyText = (text, okMsg) => {
         let ok = false;
-        try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); ok = true; } } catch (e) {}
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text);
+            ok = true;
+          }
+        } catch (e) {}
         try { W.__cxLogText = text; } catch (e) {}
-        try { console.log("[日志导出] 共 " + text.split("\n").length + " 行\n" + text); } catch (e) {}
-        push("success", "日志已导出 " + text.split("\n").length + " 行" + (ok ? "（已写入剪贴板）" : "（剪贴板不可用，已弹出文本框供手动复制）"));
-        if (!ok) cxShowText(doc, text);
-      }));
-      box.appendChild(mk("抓现场", () => {
-        const text = cxSnapshot();
-        let ok = false;
-        try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); ok = true; } } catch (e) {}
-        try { console.warn("[现场快照]\n" + text); } catch (e) {}
-        push("info", "已抓取现场快照" + (ok ? "（已写入剪贴板）" : "（剪贴板不可用，已弹出文本框）"));
-        if (!ok) cxShowText(doc, text);
-      }));
-      box.appendChild(mk("清缓存", () => {
-        const n = Object.keys(ansCacheLoad()).length;
-        try { _GM_setValue(ANS_CACHE_KEY, {}); } catch (e) {}
-        push("success", "答案缓存已清空 " + n + " 条");
-      }));
-      box.appendChild(mk("日志面板", () => {
-        if (askStore) { try { askStore.dialogVisible = true; } catch (e) {} }
-      }));
-      doc.body.appendChild(box);
-    } catch (e) { console.log("[诊断UI] 注入失败:", e); }
+        if (ok) {
+          toast(okMsg || "已复制到剪贴板");
+        } else {
+          toast("剪贴板不可用，已弹出文本框供手动复制", true);
+          cxShowText(doc, text);
+        }
+        return ok;
+      };
+
+      // ══ FAB 与状态 chip ══
+      const fab = doc.createElement("button");
+      fab.id = "cx-fab";
+      fab.type = "button";
+      fab.textContent = "AI";
+      fab.title = "学习通 AI 助手";
+
+      const chip = el("div", "cx-status");
+      chip.id = "cx-status";
+
+      // ══ 显隐 ══
+      let curTab = "run";
+      const isShown = () => panel.classList.contains("is-shown");
+      const markActive = () => { fab.classList.toggle("is-active", isShown()); };
+      const show = () => { panel.classList.add("is-shown"); markActive(); };
+      const hide = () => { panel.classList.remove("is-shown"); markActive(); };
+      const toggle = () => { if (isShown()) hide(); else show(); };
+      xBtn.onclick = (e) => { e.stopPropagation(); hide(); };
+      fab.onclick = (e) => { e.stopPropagation(); toggle(); };
+
+      // ══ 运行 ══
+      const renderRun = () => {
+        const p = panes.run;
+        p.textContent = "";
+        const t = askStore ? askStore.task : null;
+        [
+          ["任务", t ? (t.name || "-") : "-"],
+          ["状态", t ? (t.status || "(空闲)") : "-"],
+          ["题目", askStore ? (String(askStore.count || 0) + " 题") : "-"],
+          ["构建", CX_BUILD]
+        ].forEach((r) => {
+          const d = el("div", "cx-kv");
+          d.appendChild(el("b", null, r[0]));
+          d.appendChild(el("span", null, r[1]));
+          p.appendChild(d);
+        });
+        const w = (t && t.work) ? t.work : null;
+        if (w && w.questionList && w.questionList.length) {
+          p.appendChild(el("div", "cx-sep"));
+          const idx = Math.min(Math.max(w.inx || 0, 0), w.questionList.length - 1);
+          const q = w.questionList[idx];
+          const d = el("div", "cx-kv");
+          d.appendChild(el("b", null, "当前题"));
+          d.appendChild(el("span", null, "#" + (idx + 1) + " / " + w.questionList.length));
+          p.appendChild(d);
+          if (q) p.appendChild(el("div", "cx-hint", String(q.title || q.text || "").slice(0, 400)));
+        }
+      };
+
+      // ══ 日志：增量渲染 + 复制/清屏工具条 + 自动跟随 ══
+      // 旧实现每 400ms 全量重建 DOM，几百条时会闪烁卡顿，看起来像「日志没在动」。
+      // 现在只 append 新增行，容器和已有节点都不动。
+      let logBuilt = false, logCount = 0;
+
+      const makeLogLine = (it) => {
+        const line = el("div", "cx-log-line lv-" + (it.type || "info"));
+        line.appendChild(el("span", "t", it.time || ""));
+        line.appendChild(el("span", "m", it.msg || ""));
+        line.title = "点击复制这条";
+        line.onclick = () => copyText((it.time || "") + " " + (it.msg || ""), "已复制该行");
+        return line;
+      };
+
+      const buildLogPane = () => {
+        if (logBuilt) return;
+        logBuilt = true;
+        const p = panes.log;
+        p.textContent = "";
+
+        const tb = el("div", "cx-log-toolbar");
+        const copyAll = el("button", "cx-btn sm ghost", "复制全部");
+        copyAll.type = "button";
+        copyAll.onclick = () => {
+          const logs = (askStore && askStore.task && askStore.task.log) ? askStore.task.log : [];
+          if (!logs.length) { toast("暂无日志", true); return; }
+          copyText(logs.map((i) => i.time + " " + i.msg).join("\n"), "已复制 " + logs.length + " 行");
+        };
+        const cleanBtn = el("button", "cx-btn sm ghost", "清屏");
+        cleanBtn.type = "button";
+        cleanBtn.onclick = () => {
+          const list = p.querySelector(".cx-log-list");
+          if (list) list.textContent = "";
+          logCount = 0;
+          toast("已清屏（只清显示，不动数据）");
+        };
+        const meta = el("span", "cx-log-meta cx-hint");
+        meta.style.marginLeft = "auto";
+        tb.appendChild(copyAll);
+        tb.appendChild(cleanBtn);
+        tb.appendChild(meta);
+        p.appendChild(tb);
+        p.appendChild(el("div", "cx-log-list"));
+      };
+
+      const renderLog = (force) => {
+        buildLogPane();
+        const p = panes.log;
+        const list = p.querySelector(".cx-log-list");
+        if (!list) return;
+        const logs = (askStore && askStore.task && askStore.task.log) ? askStore.task.log : [];
+
+        // 条数变少（被 keepLog 截断）或强制刷新时重建
+        if (force || logs.length < logCount) {
+          list.textContent = "";
+          logCount = 0;
+        }
+
+        const atBottom = bodyEl.scrollTop + bodyEl.clientHeight >= bodyEl.scrollHeight - 40;
+
+        if (logs.length > logCount) {
+          const frag = doc.createDocumentFragment();
+          for (let i = logCount; i < logs.length; i++) frag.appendChild(makeLogLine(logs[i]));
+          if (logCount === 0) list.appendChild(frag);
+          else list.appendChild(frag);
+          logCount = logs.length;
+        }
+
+        const meta = p.querySelector(".cx-log-meta");
+        if (meta) meta.textContent = logs.length ? ("共 " + logs.length + " 条 · 点任意行复制") : "";
+
+        if (curTab === "log" && (force || atBottom)) {
+          requestAnimationFrame(() => { bodyEl.scrollTop = bodyEl.scrollHeight; });
+        }
+      };
+
+      // ══ 配置 ══
+      const CFG_GROUPS = [
+        { title: "接口", items: [
+          { k: "thtoken", label: "API Key", type: "input", desc: "保存在本地，不会上传" },
+          { k: "aiApiUrl", label: "API 地址", type: "input", desc: "留空 = DeepSeek；只填域名或只到 /v1 会自动补全 /v1/chat/completions" },
+          { k: "aiModel", label: "模型名称", type: "input", desc: "必须是服务商文档里的准确 ID，留空默认 deepseek-chat" }
+        ] },
+        { title: "章节", items: [
+          { k: "autoAnswer", label: "自动答题", type: "switch" },
+          { k: "autoVideo", label: "自动视频", type: "switch" },
+          { k: "autoJump", label: "自动切换", type: "switch" },
+          { k: "autoSubmit", label: "自动提交", type: "switch" },
+          { k: "answerInterval", label: "答题间隔(秒)", type: "number", desc: "每题之间的等待，下限 0.1；1~2 稳，0.3~0.5 很快" },
+          { k: "interval", label: "任务间隔(秒)", type: "number", desc: "任务点（视频/测验/文档）之间的等待" },
+          { k: "videoRateOn", label: "视频倍速开关", type: "switch" },
+          { k: "videoRate", label: "视频倍速", type: "number", desc: "1 ~ 16。播放器把倍速夹到上限时日志会打印实际值" },
+          { k: "videoMute", label: "视频静音", type: "switch" },
+          { k: "videoKeepAlive", label: "后台保持播放", type: "switch", desc: "切标签页 / 最小化 / 小窗时不暂停" }
+        ] },
+        { title: "考试", items: [
+          { k: "autoExam", label: "考试自动切换", type: "switch" }
+        ] },
+        { title: "其他", items: [
+          { k: "keepLog", label: "日志保留条数", type: "number", desc: "20 ~ 2000，默认 300" },
+          { k: "debugger", label: "调试模式", type: "switch", desc: "打开平台原本被阻断的调试能力" }
+        ] }
+      ];
+
+      let cfgBuilt = false;
+      const renderCfg = () => {
+        if (cfgBuilt) return;
+        cfgBuilt = true;
+        const p = panes.cfg;
+        const cfg = getConfig();
+
+        CFG_GROUPS.forEach((g) => {
+          const box = el("div", "cx-group");
+          box.appendChild(el("div", "cx-group-title", g.title));
+          g.items.forEach((f) => {
+            const fd = el("div", "cx-field");
+            fd.appendChild(el("div", "cx-field-label", f.label));
+            if (f.type === "switch") {
+              const sw = el("label", "cx-switch");
+              const cb = doc.createElement("input");
+              cb.type = "checkbox";
+              cb.dataset.k = f.k;
+              cb.checked = cfg[f.k] !== false;
+              const track = el("span", "track");
+              track.appendChild(el("span", "thumb"));
+              sw.appendChild(cb);
+              sw.appendChild(track);
+              fd.appendChild(sw);
+            } else {
+              const inp = doc.createElement("input");
+              inp.className = "cx-input";
+              inp.dataset.k = f.k;
+              inp.type = (f.type === "number") ? "number" : "text";
+              if (f.type === "number") inp.step = "0.1";
+              inp.value = (cfg[f.k] == null) ? "" : String(cfg[f.k]);
+              fd.appendChild(inp);
+            }
+            if (f.desc) fd.appendChild(el("div", "cx-field-desc", f.desc));
+            box.appendChild(fd);
+          });
+          p.appendChild(box);
+        });
+
+        const row = el("div", "cx-actions");
+        const saveBtn = el("button", "cx-btn", "保存");
+        saveBtn.type = "button";
+        const reloadBtn = el("button", "cx-btn ghost", "重新载入");
+        reloadBtn.type = "button";
+
+        saveBtn.onclick = () => {
+          const base = getConfig();
+          let bad = "";
+          CFG_GROUPS.forEach((g) => {
+            g.items.forEach((f) => {
+              const inp = p.querySelector('[data-k="' + f.k + '"]');
+              if (!inp) return;
+              if (f.type === "switch") {
+                base[f.k] = !!inp.checked;
+              } else if (f.type === "number") {
+                const v = parseFloat(inp.value);
+                if (!isFinite(v)) { bad = f.label; return; }
+                base[f.k] = v;
+              } else {
+                base[f.k] = String(inp.value).trim();
+              }
+            });
+          });
+          if (bad) { push("error", "「" + bad + "」不是有效数字，未保存"); return; }
+          try {
+            _GM_setValue("config", JSON.parse(JSON.stringify(base)));
+            push("success", "配置已保存。答题间隔 / 任务间隔 / 倍速当章生效；API 地址、模型、Key 需刷新页面");
+            renderRun();
+          } catch (e) {
+            push("error", "保存失败：" + (e && e.message ? e.message : e));
+          }
+        };
+        reloadBtn.onclick = () => {
+          cfgBuilt = false;
+          panes.cfg.textContent = "";
+          renderCfg();
+        };
+        row.appendChild(saveBtn);
+        row.appendChild(reloadBtn);
+        p.appendChild(row);
+        p.appendChild(el("div", "cx-hint", "所有字段都在这里，原脚本的配置弹窗已隐藏。"));
+      };
+
+      // ══ 工具 ══
+      let toolBuilt = false;
+      const renderTool = () => {
+        if (toolBuilt) return;
+        toolBuilt = true;
+        const p = panes.tool;
+
+        const mk = (label, cls, fn) => {
+          const b = el("button", "cx-btn " + (cls || ""), label);
+          b.type = "button";
+          b.onclick = () => { try { fn(b); } catch (e) { push("error", String(e)); } };
+          return b;
+        };
+
+        const row1 = el("div", "cx-actions");
+        row1.appendChild(mk("诊断", "ghost", async () => {
+          push("info", "──────── 诊断开始 ────────");
+          select("log");
+          try { await cxDiag(push); } catch (e) { push("error", "诊断异常：" + (e && e.message ? e.message : e)); }
+          push("success", "──────── 诊断结束 ────────");
+          select("log");
+        }));
+        row1.appendChild(mk("抓现场", "ghost", () => {
+          const text = cxSnapshot();
+          try { console.warn("[现场快照]\n" + text); } catch (e) {}
+          copyText(text, "现场快照已复制到剪贴板");
+          push("info", "已抓取现场快照");
+        }));
+        row1.appendChild(mk("导出日志", "ghost", () => {
+          let text = "";
+          try { text = (askStore ? askStore.task.log : []).map((i) => i.time + " " + i.msg).join("\n"); } catch (e) {}
+          if (!text) { toast("暂无日志可导出", true); return; }
+          try { console.log("[日志导出] 共 " + text.split("\n").length + " 行\n" + text); } catch (e) {}
+          copyText(text, "已复制 " + text.split("\n").length + " 行到剪贴板");
+          push("success", "已导出 " + text.split("\n").length + " 行");
+        }));
+        p.appendChild(row1);
+
+        p.appendChild(el("div", "cx-sep"));
+
+        const row2 = el("div", "cx-actions");
+        let armed = false, armTimer = 0;
+        row2.appendChild(mk("清空答案缓存", "danger", (btn) => {
+          if (!armed) {
+            armed = true;
+            btn.classList.add("armed");
+            btn.textContent = "再点一次确认";
+            clearTimeout(armTimer);
+            armTimer = setTimeout(() => {
+              armed = false;
+              btn.classList.remove("armed");
+              btn.textContent = "清空答案缓存";
+            }, 2000);
+            return;
+          }
+          clearTimeout(armTimer);
+          armed = false;
+          btn.classList.remove("armed");
+          btn.textContent = "清空答案缓存";
+          const n = Object.keys(ansCacheLoad()).length;
+          try { _GM_setValue(ANS_CACHE_KEY, {}); } catch (e) {}
+          push("success", "答案缓存已清空 " + n + " 条");
+        }));
+        p.appendChild(row2);
+        p.appendChild(el("div", "cx-hint", "诊断会检查端点、可用模型列表与参数阶梯；抓现场导出当前题目的 DOM 结构。两者都不清空既有日志。"));
+      };
+
+      // ══ 声明 ══
+      let msgBuilt = false;
+      const renderMsg = () => {
+        if (msgBuilt) return;
+        msgBuilt = true;
+        const p = panes.msg;
+        const link = 'style="color:var(--md-primary);text-decoration:none" target="_blank" rel="noopener"';
+        p.innerHTML =
+          '<h3 style="margin:0 0 10px;font:500 15px/1.4 inherit">本脚本仅用于学习交流，请 24h 内删除</h3>' +
+          '<p style="margin:0 0 10px;font-size:13px;color:var(--md-error)">禁止用于各种非法用途，否则后果自负</p>' +
+          '<p style="margin:0 0 12px;font-size:13px;line-height:1.7">答案由 AI 大语言模型生成，准确率不保证 100%，请自行判断、评估是否使用。</p>' +
+          '<div class="cx-sep"></div>' +
+          '<p style="margin:0 0 6px;font:12px/1.6 var(--md-mono);color:var(--md-on-surface-variant)">构建：' + CX_BUILD + '</p>' +
+          '<p style="margin:0 0 6px;font-size:12px;color:var(--md-on-surface-variant)">AI 能力由 <a href="https://www.deepseek.com" ' + link + '>DeepSeek</a> 等大模型提供 · 原脚本 by <a href="https://github.com/March-OwO/Xuexitong-LLM-Assistant" ' + link + '>March-OwO</a></p>' +
+          '<p style="margin:0;font-size:12px;line-height:1.9"><a href="https://github.com/Phiedeir/Xuexitong-LLM-Assistant" ' + link + '>GitHub 仓库</a> · ' +
+          '<a href="https://github.com/Phiedeir/Xuexitong-LLM-Assistant/blob/main/CHANGELOG.md" ' + link + '>更新日志</a> · ' +
+          '<a href="https://github.com/Phiedeir/Xuexitong-LLM-Assistant/issues" ' + link + '>反馈</a></p>';
+      };
+
+      // ══ tab 切换 ══
+      const select = (id) => {
+        curTab = id;
+        tabsEl.querySelectorAll(".cx-tab").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === id));
+        Object.keys(panes).forEach((k) => panes[k].classList.toggle("is-active", k === id));
+        if (id === "run") renderRun();
+        if (id === "log") renderLog(true);
+        if (id === "cfg") renderCfg();
+        if (id === "tool") renderTool();
+        if (id === "msg") renderMsg();
+        try { bodyEl.scrollTop = 0; } catch (e) {}
+      };
+      tabsEl.addEventListener("click", (e) => {
+        const b = (e.target && e.target.closest) ? e.target.closest(".cx-tab") : null;
+        if (b && b.dataset.tab) select(b.dataset.tab);
+      });
+
+      // ══ 拖动 + 缩放 + 位置/尺寸记忆 ══
+      const POS_KEY = "uiPanelPos";
+      const SIZE_KEY = "uiPanelSize";
+      let pos = null, size = null;
+      try { pos = _GM_getValue(POS_KEY); } catch (e) {}
+      try { size = _GM_getValue(SIZE_KEY); } catch (e) {}
+
+      let px = (pos && isFinite(pos.x)) ? pos.x : null;
+      let py = (pos && isFinite(pos.y)) ? pos.y : null;
+      let pw = (size && isFinite(size.w)) ? size.w : null;
+      let ph = (size && isFinite(size.h)) ? size.h : null;
+      let placed = false;
+      const vw = () => (W.innerWidth || doc.documentElement.clientWidth || 1200);
+      const vh = () => (W.innerHeight || doc.documentElement.clientHeight || 800);
+      const MIN_W = 340, MIN_H = 260;
+
+      // 宽高按视口比例给默认值，夹在合理区间内，再夹进视口
+      const applyBox = () => {
+        if (pw === null) pw = Math.round(Math.min(600, Math.max(MIN_W, vw() * 0.42)));
+        if (ph === null) ph = Math.round(Math.min(660, Math.max(MIN_H, vh() * 0.74)));
+        pw = Math.min(Math.max(pw, MIN_W), Math.max(MIN_W, vw() - 16));
+        ph = Math.min(Math.max(ph, MIN_H), Math.max(MIN_H, vh() - 16));
+        try {
+          panel.style.setProperty("width", pw + "px", "important");
+          panel.style.setProperty("height", ph + "px", "important");
+        } catch (e) {}
+
+        if (!placed) {
+          placed = true;
+          if (px === null) px = Math.round((vw() - pw) / 2);
+          if (py === null) py = Math.round(Math.max(44, vh() * 0.08));
+        }
+        px = Math.min(Math.max(px, 8), Math.max(8, vw() - pw - 8));
+        py = Math.min(Math.max(py, 8), Math.max(8, vh() - ph - 8));
+        try {
+          panel.style.setProperty("left", px + "px", "important");
+          panel.style.setProperty("top", py + "px", "important");
+        } catch (e) {}
+      };
+
+      // 拖动（标题栏）
+      let drag = null;
+      bar.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        if (e.target === xBtn || xBtn.contains(e.target)) return;
+        e.preventDefault();
+        panel.classList.add("is-dragging");
+        drag = { sx: e.clientX, sy: e.clientY, ox: px, oy: py };
+      });
+      doc.addEventListener("mousemove", (e) => {
+        if (!drag) return;
+        px = drag.ox + (e.clientX - drag.sx);
+        py = drag.oy + (e.clientY - drag.sy);
+        applyBox();
+      }, true);
+      doc.addEventListener("mouseup", () => {
+        if (!drag) return;
+        drag = null;
+        panel.classList.remove("is-dragging");
+        try { _GM_setValue(POS_KEY, { x: px, y: py }); } catch (e) {}
+      }, true);
+
+      // 缩放（右下角把手）
+      let sizing = null;
+      grip.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        panel.classList.add("is-resizing");
+        sizing = { sx: e.clientX, sy: e.clientY, ow: pw, oh: ph };
+      });
+      doc.addEventListener("mousemove", (e) => {
+        if (!sizing) return;
+        pw = sizing.ow + (e.clientX - sizing.sx);
+        ph = sizing.oh + (e.clientY - sizing.sy);
+        applyBox();
+      }, true);
+      doc.addEventListener("mouseup", () => {
+        if (!sizing) return;
+        sizing = null;
+        panel.classList.remove("is-resizing");
+        try { _GM_setValue(SIZE_KEY, { w: pw, h: ph }); } catch (e) {}
+      }, true);
+
+      try { W.addEventListener("resize", () => { try { applyBox(); } catch (e) {} }); } catch (e) {}
+
+      // ══ 落盘 & 隐藏原 dialog ══
+      doc.body.appendChild(chip);
+      doc.body.appendChild(panel);
+      doc.body.appendChild(fab);
+      doc.body.appendChild(snack);
+
+      // 原脚本 dialogVisible 初始为 true，两个 el-dialog 会直接弹出来。
+      // 按标题识别并隐藏整个 overlay，只留数据层。
+      const hideOwnDialogs = () => {
+        try {
+          doc.querySelectorAll(".el-dialog").forEach((d) => {
+            const t = d.querySelector(".el-dialog__title");
+            if (!t || !/学习通AI学习助手/.test(t.textContent || "")) return;
+            const ov = (d.closest && d.closest(".el-overlay")) || null;
+            if (ov) ov.style.setProperty("display", "none", "important");
+            else d.style.setProperty("display", "none", "important");
+          });
+        } catch (e) {}
+      };
+      hideOwnDialogs();
+      let hideQueued = false;
+      new MutationObserver(() => {
+        if (hideQueued) return;
+        hideQueued = true;
+        requestAnimationFrame(() => { hideQueued = false; hideOwnDialogs(); });
+      }).observe(doc.body, { childList: true, subtree: true });
+
+      // ══ 轮询：驱动运行页、日志页与状态 chip ══
+      let lastRunKey = "", lastChip = "";
+      setInterval(() => {
+        try {
+          if (isShown()) {
+            if (curTab === "run") {
+              const t = askStore ? askStore.task : null;
+              const k = (t ? (t.name + "|" + t.status + "|" + ((t.work && t.work.inx != null) ? t.work.inx : "")) : "") +
+                        "|" + (askStore ? askStore.count : "");
+              if (k !== lastRunKey) { lastRunKey = k; renderRun(); }
+            } else if (curTab === "log") {
+              renderLog(false);
+            }
+          }
+          const st = askStore ? String(askStore.task.status || askStore.task.name || "") : "";
+          if (st !== lastChip) {
+            lastChip = st;
+            chip.textContent = st;
+            chip.classList.toggle("is-shown", !!st && st !== "执行任务中");
+            fab.classList.toggle("has-alert", /失败|错误|异常/.test(st));
+          }
+        } catch (e) {}
+      }, 400);
+
+      // ══ 初始化 ══
+      select("run");
+      applyBox();
+      console.log("[UI] 自绘面板就绪：运行 / 日志 / 配置 / 工具 / 声明，可拖可缩放，原 el-dialog 已隐藏");
+    } catch (e) { console.log("[UI] 注入失败:", e); }
   };
 
   // ── 后台 / 小窗保持播放 ──────────────────────────────────────────────

@@ -4,7 +4,7 @@
 > 纯 AI 作答，不依赖第三方题库；覆盖视频、文档、章节测验、作业、考试的全流程。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Tampermonkey-FF8000.svg)](https://www.tampermonkey.net/)
 [![Upstream](https://img.shields.io/badge/upstream-March--OwO-lightgrey.svg)](https://github.com/March-OwO/Xuexitong-LLM-Assistant)
 [![Powered by DeepSeek](https://img.shields.io/badge/AI%20powered%20by-DeepSeek-4D6BFE.svg)](https://www.deepseek.com)
@@ -148,9 +148,36 @@ https://raw.githubusercontent.com/Phiedeir/Xuexitong-LLM-Assistant/main/chaoxing
 
 ### 界面
 
-- 右下角毛玻璃圆形 **AI** 按钮，点击显隐悬浮窗
-- 运行框实时显示当前题目、AI 原话、填入的选项
-- 接口返回区显示每题输入 / 输出 Token（服务商不返回 usage 时按字符估算并标注）
+**全部功能收在一个自绘面板里**，不再依赖 Element Plus 的 `el-dialog`。
+
+原脚本把「运行框」和「配置」做成两个独立弹窗，由 Vue 组件的 `dialogVisible` / `dialogV` 控制，
+位置和层级都不受控，而且 `dialogVisible` 初始就是 `true` —— 一进页面就弹窗。2.3.0 起改为：
+
+- **一个可拖面板，五个 tab**：
+
+  | tab | 内容 |
+  |---|---|
+  | 运行 | 任务名、状态、题目数、当前题目 |
+  | 日志 | 运行日志，实时跟随滚动 |
+  | 配置 | 全部配置项（接口 / 章节 / 考试 / 其他），直接读写 GM 存储 |
+  | 工具 | 诊断 / 抓现场 / 导出日志 / 清空缓存 |
+  | 声明 | 免责声明、构建号、仓库链接 |
+
+- **入口只有一个 FAB**：点一下开合面板，不用再从菜单里挑
+- **原 `el-dialog` 全部隐藏**：按标题识别后对整个 overlay 设 `display:none`，
+  只保留它们的数据层（`askStore`、`getConfig` 仍在用）
+- **配置直接写 `GM_setValue("config", …)`**，绕开 Vue 的 `forminput`，
+  字段清单在前端硬编码，不依赖原组件的渲染逻辑
+
+视觉按 **Material Design 3**：tonal 色板（`#0061A4` 主色）、16/28px 圆角、
+三级 elevation 阴影、标准缓动 `cubic-bezier(.2,0,0,1)`，跟随系统深色模式。
+
+几个刻意做对的地方：
+
+- **诊断不清日志**：只插一行分隔符，保留已有记录；跑完自动切到「日志」tab
+- **清缓存要确认**：第一次点击变成「再点一次确认」，2 秒内再点才执行
+- **面板位置记忆**：拖动后写入 `GM_setValue("uiPanelPos")`，下次打开回到原处
+- **状态异常时 FAB 亮红点**：状态里出现「失败 / 错误 / 异常」才提示
 
 ---
 

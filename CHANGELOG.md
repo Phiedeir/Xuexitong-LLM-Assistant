@@ -26,6 +26,50 @@
 
 ---
 
+## [2.4.0] - 2026-11-03
+
+UI 全面重写。原脚本把「运行框」和「配置」做成两个独立 `el-dialog`，由 Vue 组件的
+`dialogVisible` / `dialogV` 控制，位置和层级都不受控，`dialogVisible` 初始还是 `true`
+（一进页面就弹窗）。本次改为完全自绘，不再依赖原组件的渲染逻辑。
+
+### 新增
+
+- **单面板**：一个可拖窗口装下五个 tab —— 运行 / 日志 / 配置 / 工具 / 声明
+- **可缩放**：右下角把手拖动调整宽高，尺寸与位置分别记在
+  `GM_setValue("uiPanelSize")` 与 `GM_setValue("uiPanelPos")`，窗口变化时自动夹回视口
+- **日志增量渲染**：只 append 新增行，不再每 400ms 全量重建 DOM（旧实现几百条时会闪烁卡顿）
+- **复制入口**：日志 tab 顶部「复制全部 / 清屏」，任意日志行点击即复制该行；
+  抓现场与导出日志也走同一套复制逻辑
+- **Snackbar 反馈**：复制成功、剪贴板不可用等结果用 MD3 Snackbar 提示
+- **MD3 视觉**：tonal 色板（主色 `#0061A4`）、16/28px 圆角、三级 elevation 阴影、
+  标准缓动 `cubic-bezier(.2,0,0,1)`、filled 输入框、48×28 开关、跟随系统深色模式
+- **配置直接写 GM**：表单字段在前端硬编码，保存时以 `getConfig()` 为基底覆盖后写
+  `GM_setValue("config", …)`，字段增减不依赖原组件
+- **FAB 单击开合面板**，状态含「失败/错误/异常」时亮红点
+- **诊断不清日志**：只插分隔行，跑完自动切到日志 tab
+- **清缓存二次确认**：首次点击变「再点一次确认」，2 秒内再点才执行
+
+### 修复
+
+- **浮窗乱跑**：Element Plus 的 `draggable` 靠累加 `el.style.transform` 实现位移，
+  resize 或组件重渲染后偏移越积越远。改为 `left/top` 像素定位并把 `transform` 置 `none`
+- **原弹窗默认打开**：按标题识别后对整个 `.el-overlay` 设 `display:none`，
+  并用 MutationObserver 持续盯防，仅保留数据层（`askStore`、`getConfig`）
+- 状态 chip 与工具条在同一行重叠
+
+### 变更
+
+- 移除中途引入的 Speed Dial 菜单与悬浮工具条，工具全部收进面板
+- 移除对 `el-dialog` / `el-tabs` / `el-button` 等组件的样式覆盖
+
+### 验证
+
+- `node --check` 通过
+- headless Chrome 渲染预览核对：五 tab、MD3 开关、filled 输入框、
+  缩放把手、Snackbar 与 FAB 均正确
+
+- build: `2.4.0-20261103d`
+
 ## [2.1.0] - 2026-11-02
 
 - 新增视频后台/小窗保持播放：可见性伪装 + 事件拦截 + 媒体时钟恢复
